@@ -605,7 +605,11 @@ def index():
                ORDER BY l.created_at DESC"""
         ).fetchall()
 
-    return render_template("index.html", lists=lists)
+    return render_template(
+        "index.html",
+        lists=lists,
+        update_interval_ms=UPDATE_INTERVAL * 1000,
+    )
 
 
 @app.get("/lists/<list_id>")
