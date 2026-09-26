@@ -146,16 +146,21 @@ def extract_film_paths(html):
     result = []
     seen = set()
 
-    for anchor in soup.select('a[href^="/film/"]'):
-        match = re.match(r"^/film/([^/?#]+)/?", anchor.get("href", ""))
-        if not match:
-            continue
+    for element in soup.select("[data-item-link], [data-target-link], a[href]"):
+        for attribute in ("data-item-link", "data-target-link", "href"):
+            value = element.get(attribute, "")
+            match = re.match(r"^/film/([^/?#]+)/?$", value)
 
-        path = f"/film/{match.group(1)}/"
+            if not match:
+                continue
 
-        if path not in seen:
-            seen.add(path)
-            result.append(path)
+            path = f"/film/{match.group(1)}/"
+
+            if path not in seen:
+                seen.add(path)
+                result.append(path)
+
+            break
 
     return result
 
