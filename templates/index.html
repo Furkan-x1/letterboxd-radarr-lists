@@ -144,7 +144,7 @@ function updateNextUpdate(card, updatedAt) {
     return;
   }
 
-  const next = new Date(updatedAt).getTime() + 21600000;
+  const next = new Date(updatedAt).getTime() + {{ update_interval_ms }};
   const remaining = next - Date.now();
 
   if (remaining <= 0) {
