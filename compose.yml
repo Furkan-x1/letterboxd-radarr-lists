@@ -1,0 +1,16 @@
+services:
+  letterboxd-radarr-lists:
+    build: .
+    container_name: letterboxd-radarr-lists
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./data:/data
+    environment:
+      - TZ=Europe/Istanbul
+      - UPDATE_INTERVAL_SECONDS=21600
+      - LETTERBOXD_REQUEST_DELAY_SECONDS=2
+      - LETTERBOXD_REQUEST_TIMEOUT_SECONDS=20
+      - MAX_PAGES_PER_LIST=100
+      - MAX_MOVIES_PER_LIST=5000
+    restart: unless-stopped
