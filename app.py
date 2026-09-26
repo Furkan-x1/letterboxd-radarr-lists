@@ -33,6 +33,8 @@ session.headers.update({"User-Agent": USER_AGENT})
 robots = robotparser.RobotFileParser()
 robots_lock = threading.Lock()
 scrape_lock = threading.Lock()
+refresh_lock = threading.Lock()
+active_refreshes = set()
 last_request_at = 0.0
 
 
@@ -257,38 +259,59 @@ def store_movies(list_id, movies):
 
 
 def refresh_list(list_id):
-    with db() as connection:
-        row = connection.execute(
-            "SELECT * FROM lists WHERE id = ?",
-            (list_id,),
-        ).fetchone()
+    with refresh_lock:
+        if list_id in active_refreshes:
+            log.info("Refresh already running for list %s; skipping.", list_id)
+            return
 
-    if not row:
-        return
+        active_refreshes.add(list_id)
 
     try:
-        movies = scrape_list(row["letterboxd_url"])
-
-        if not movies:
-            raise RuntimeError("No movies were found in the Letterboxd list.")
-
-        store_movies(list_id, movies)
-
         with db() as connection:
-            connection.execute(
-                "UPDATE lists SET updated_at = ?, last_error = NULL WHERE id = ?",
-                (now(), list_id),
-            )
+            row = connection.execute(
+                "SELECT * FROM lists WHERE id = ?",
+                (list_id,),
+            ).fetchone()
 
-        log.info("Updated %s: %s movies.", row["letterboxd_url"], len(movies))
+        if not row:
+            return
 
-    except Exception as exc:
-        with db() as connection:
-            connection.execute(
-                "UPDATE lists SET last_error = ? WHERE id = ?",
-                (str(exc), list_id),
-            )
-        log.exception("Failed to update %s", row["letterboxd_url"])
+        try:
+            movies = scrape_list(row["letterboxd_url"])
+
+            if not movies:
+                raise RuntimeError("No movies were found in the Letterboxd list.")
+
+            store_movies(list_id, movies)
+
+            with db() as connection:
+                connection.execute(
+                    "UPDATE lists SET updated_at = ?, last_error = NULL WHERE id = ?",
+                    (now(), list_id),
+                )
+
+            log.info("Updated %s: %s movies.", row["letterboxd_url"], len(movies))
+
+        except Exception as exc:
+            with db() as connection:
+                connection.execute(
+                    "UPDATE lists SET last_error = ? WHERE id = ?",
+                    (str(exc), list_id),
+                )
+            log.exception("Failed to update %s", row["letterboxd_url"])
+    finally:
+        with refresh_lock:
+            active_refreshes.discard(list_id)
+
+
+def start_refresh(list_id):
+    thread = threading.Thread(
+        target=refresh_list,
+        args=(list_id,),
+        daemon=True,
+        name=f"refresh-{list_id}",
+    )
+    thread.start()
 
 
 def updater_loop():
@@ -356,13 +379,21 @@ def create_list():
             (list_id, letterboxd_url, name, now()),
         )
 
-    refresh_list(list_id)
+    start_refresh(list_id)
     return redirect(url_for("index"))
 
 
 @app.post("/lists/<list_id>/refresh")
 def manual_refresh(list_id):
-    refresh_list(list_id)
+    with db() as connection:
+        exists = connection.execute(
+            "SELECT 1 FROM lists WHERE id = ?",
+            (list_id,),
+        ).fetchone()
+
+    if exists:
+        start_refresh(list_id)
+
     return redirect(url_for("index"))
 
 
