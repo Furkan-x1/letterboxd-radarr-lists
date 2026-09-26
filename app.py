@@ -38,6 +38,7 @@ scrape_lock = threading.Lock()
 scrape_job_lock = threading.Lock()
 refresh_lock = threading.Lock()
 active_refreshes = {}
+global_pause_until = 0.0
 last_request_at = 0.0
 
 
@@ -459,8 +460,13 @@ def store_movies(list_id, movies, watchlist):
         )
 
 
-def refresh_list(list_id):
+def refresh_list(list_id, force=False):
+    global global_pause_until
+
     with refresh_lock:
+        if not force and global_pause_until > time.time():
+            log.info("Global refresh pause is active; skipping list %s.", list_id)
+            return
         if list_id in active_refreshes:
             log.info("Refresh already running for list %s; skipping.", list_id)
             return
@@ -554,10 +560,10 @@ def refresh_list(list_id):
             active_refreshes.pop(list_id, None)
 
 
-def start_refresh(list_id):
+def start_refresh(list_id, force=False):
     thread = threading.Thread(
         target=refresh_list,
-        args=(list_id,),
+        args=(list_id, force),
         daemon=True,
         name=f"refresh-{list_id}",
     )
@@ -582,6 +588,35 @@ def updater_loop():
             log.exception("Background update failed")
 
         time.sleep(UPDATE_INTERVAL)
+
+
+@app.post("/pause-refresh")
+def pause_refresh():
+    global global_pause_until
+    global_pause_until = time.time() + UPDATE_INTERVAL
+    return redirect(url_for("index"))
+
+
+@app.post("/resume-refresh")
+def resume_refresh():
+    global global_pause_until
+    global_pause_until = 0.0
+    return redirect(url_for("index"))
+
+
+@app.get("/refresh-status")
+def refresh_status():
+    with refresh_lock:
+        active_count = len(active_refreshes)
+        pause_until = global_pause_until
+
+    return jsonify({
+        "paused": pause_until > time.time(),
+        "pause_until": datetime.fromtimestamp(
+            pause_until, timezone.utc
+        ).isoformat() if pause_until > time.time() else None,
+        "active_updates": active_count,
+    })
 
 
 @app.get("/health")
