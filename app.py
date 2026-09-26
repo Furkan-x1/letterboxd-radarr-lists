@@ -23,7 +23,7 @@ MAX_PAGES = int(os.getenv("MAX_PAGES_PER_LIST", "100"))
 MAX_MOVIES = int(os.getenv("MAX_MOVIES_PER_LIST", "5000"))
 USER_AGENT = os.getenv(
     "USER_AGENT",
-    "LetterboxdRadarrLists/0.1 (+https://github.com/Furkan-x1/letterboxd-radarr-lists)",
+    "LetterboxdRadarrLists/0.1",
 )
 
 app = Flask(__name__)
@@ -82,6 +82,15 @@ def init_db():
                 "ALTER TABLE movies ADD COLUMN letterboxd_path TEXT NOT NULL DEFAULT ''"
             )
 
+        list_columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(lists)")
+        }
+        if "enabled" not in list_columns:
+            connection.execute(
+                "ALTER TABLE lists ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1"
+            )
+
 
 def now():
     return datetime.now(timezone.utc).isoformat()
@@ -110,7 +119,7 @@ def normalize_letterboxd_url(value):
         r"^/[^/]+/list/[^/]+/$", path
     ):
         raise ValueError(
-            "Enter a public Letterboxd path such as xVarga/watchlist or xVarga/list/example."
+            "Enter a public Letterboxd path such as username/watchlist or username/list/example."
         )
 
     return urljoin("https://letterboxd.com", path)
@@ -561,7 +570,9 @@ def updater_loop():
             with db() as connection:
                 ids = [
                     row["id"]
-                    for row in connection.execute("SELECT id FROM lists")
+                    for row in connection.execute(
+                        "SELECT id FROM lists WHERE enabled = 1"
+                    )
                 ]
 
             for list_id in ids:
@@ -642,7 +653,7 @@ def list_detail(list_id):
 def list_status(list_id):
     with db() as connection:
         row = connection.execute(
-            "SELECT updated_at, last_error FROM lists WHERE id = ?",
+            "SELECT updated_at, last_error, enabled FROM lists WHERE id = ?",
             (list_id,),
         ).fetchone()
 
@@ -654,6 +665,17 @@ def list_status(list_id):
 
     if active:
         return jsonify(active)
+
+    if not row["enabled"]:
+        return jsonify(
+            {
+                "state": "paused",
+                "message": "Automatic updates paused",
+                "updated_at": row["updated_at"],
+                "current": 0,
+                "total": 0,
+            }
+        )
 
     if row["last_error"]:
         return jsonify(
@@ -683,7 +705,12 @@ def create_list():
             request.form["letterboxd_url"]
         )
     except (KeyError, ValueError) as exc:
-        return render_template("index.html", error=str(exc)), 400
+        return render_template(
+            "index.html",
+            error=str(exc),
+            lists=[],
+            update_interval_ms=UPDATE_INTERVAL * 1000,
+        ), 400
 
     with db() as connection:
         existing = connection.execute(
@@ -701,7 +728,7 @@ def create_list():
         connection.execute(
             """INSERT INTO lists(id, letterboxd_url, name, created_at)
                VALUES (?, ?, ?, ?)""",
-            (list_id, name, now()),
+            (list_id, letterboxd_url, name, now()),
         )
 
     start_refresh(list_id)
@@ -718,6 +745,23 @@ def manual_refresh(list_id):
 
     if exists:
         start_refresh(list_id)
+
+    return redirect(url_for("index"))
+
+
+@app.post("/lists/<list_id>/toggle")
+def toggle_list(list_id):
+    with db() as connection:
+        row = connection.execute(
+            "SELECT enabled FROM lists WHERE id = ?",
+            (list_id,),
+        ).fetchone()
+
+        if row:
+            connection.execute(
+                "UPDATE lists SET enabled = ? WHERE id = ?",
+                (0 if row["enabled"] else 1, list_id),
+            )
 
     return redirect(url_for("index"))
 
