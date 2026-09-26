@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Letterboxd Radarr Lists</title>
+<style>
+body{font-family:sans-serif;max-width:1000px;margin:40px auto;padding:0 20px}
+input{width:min(700px,100%);padding:10px;box-sizing:border-box}
+button{padding:10px 14px;cursor:pointer}
+.add{display:flex;gap:10px;margin-bottom:30px}.add input{flex:1}
+.list{border:1px solid #ccc;padding:16px;margin:12px 0}.url,.endpoint{word-break:break-all}
+.meta{color:#666}.error{color:#b00020}
+form.inline{display:inline}
+@media(max-width:650px){.add{display:block}.add button{margin-top:8px}}
+</style>
+</head>
+<body>
+<h1>Letterboxd Radarr Lists</h1>
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+<form class="add" method="post" action="{{ url_for('create_list') }}">
+<input name="letterboxd_url" type="url" placeholder="https://letterboxd.com/username/list/example/" required>
+<button type="submit">Add list</button>
+</form>
+{% if not lists %}<p>No lists configured.</p>{% endif %}
+{% for item in lists %}
+<section class="list">
+<h2>{{ item["name"] }}</h2>
+<div class="url">{{ item["letterboxd_url"] }}</div>
+<p class="meta">{{ item["movie_count"] }} movies{% if item["updated_at"] %} · Last update: {{ item["updated_at"] }}{% endif %}</p>
+<p><strong>Radarr URL:</strong><br>
+<a class="endpoint" href="{{ url_for('radarr_list', list_id=item['id'], _external=True) }}">{{ url_for('radarr_list', list_id=item["id"], _external=True) }}</a></p>
+{% if item["last_error"] %}<p class="error">Last update error: {{ item["last_error"] }}</p>{% endif %}
+<form class="inline" method="post" action="{{ url_for('manual_refresh', list_id=item['id']) }}"><button type="submit">Refresh now</button></form>
+<form class="inline" method="post" action="{{ url_for('delete_list', list_id=item['id']) }}" onsubmit="return confirm('Delete this list?');"><button type="submit">Delete</button></form>
+</section>
+{% endfor %}
+</body>
+</html>
