@@ -5,35 +5,138 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Letterboxd Radarr Lists</title>
 <style>
-body{font-family:sans-serif;max-width:1000px;margin:40px auto;padding:0 20px}
-input{width:min(700px,100%);padding:10px;box-sizing:border-box}
-button{padding:10px 14px;cursor:pointer}
-.add{display:flex;gap:10px;margin-bottom:30px}.add input{flex:1}
-.list{border:1px solid #ccc;padding:16px;margin:12px 0}.url,.endpoint{word-break:break-all}
-.meta{color:#666}.error{color:#b00020}
-form.inline{display:inline}
-@media(max-width:650px){.add{display:block}.add button{margin-top:8px}}
+:root{color-scheme:dark;--bg:#111315;--panel:#191c20;--panel2:#20242a;--border:#30353d;--text:#f1f3f5;--muted:#9da5af;--accent:#00c030;--danger:#ef6b73}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+main{max-width:1050px;margin:0 auto;padding:42px 22px 60px}
+header{margin-bottom:30px}
+h1{margin:0 0 7px;font-size:30px;letter-spacing:-.02em}
+.subtitle{margin:0;color:var(--muted)}
+.add{display:flex;gap:10px;margin:0 0 28px}
+.add input{flex:1;min-width:0;background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:9px;padding:12px 14px;font:inherit;outline:none}
+.add input:focus{border-color:var(--accent)}
+button,.button{border:1px solid var(--border);background:var(--panel2);color:var(--text);border-radius:8px;padding:10px 14px;font:inherit;cursor:pointer;text-decoration:none;display:inline-block}
+button:hover,.button:hover{border-color:#59616c}
+.primary{background:var(--accent);border-color:var(--accent);color:#061006;font-weight:650}
+.danger{color:#ff9aa0}
+.error{color:var(--danger);background:#2a171a;border:1px solid #512328;border-radius:8px;padding:10px 12px}
+.cards{display:grid;gap:14px}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px}
+.card-head{display:flex;justify-content:space-between;gap:20px;align-items:flex-start}
+.card h2{margin:0 0 4px;font-size:20px}
+.card h2 a{color:inherit;text-decoration:none}
+.card h2 a:hover{text-decoration:underline}
+.url{color:var(--muted);font-size:13px;word-break:break-all}
+.stats{display:flex;gap:18px;margin:16px 0;color:var(--muted);font-size:14px}
+.stats strong{color:var(--text)}
+.status{margin:12px 0;padding:10px 12px;border-radius:8px;background:var(--panel2);color:var(--muted)}
+.status.updating{color:var(--text)}
+.status.completed{color:var(--accent)}
+.status.error{color:var(--danger);background:#2a171a}
+.progress{height:5px;background:#2c3138;border-radius:99px;overflow:hidden;margin-top:8px}
+.progress>span{display:block;height:100%;background:var(--accent);width:0;transition:width .2s}
+.endpoint{display:flex;gap:8px;align-items:center;margin:16px 0}
+.endpoint code{flex:1;min-width:0;background:#101215;border:1px solid var(--border);border-radius:7px;padding:9px 10px;color:#c9ced5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.empty{color:var(--muted);padding:35px 0;text-align:center}
+@media(max-width:650px){main{padding:28px 14px}.add{display:block}.add button{margin-top:8px;width:100%}.card-head{display:block}.stats{flex-wrap:wrap;gap:10px 18px}}
 </style>
 </head>
 <body>
+<main>
+<header>
 <h1>Letterboxd Radarr Lists</h1>
+<p class="subtitle">Keep public Letterboxd lists synchronized with Radarr.</p>
+</header>
+
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
+
 <form class="add" method="post" action="{{ url_for('create_list') }}">
-<input name="letterboxd_url" type="url" placeholder="https://letterboxd.com/username/list/example/" required>
-<button type="submit">Add list</button>
+<input name="letterboxd_url" type="text" placeholder="xVarga/watchlist or xVarga/list/example" required>
+<button class="primary" type="submit">Add list</button>
 </form>
-{% if not lists %}<p>No lists configured.</p>{% endif %}
+
+{% if not lists %}
+<p class="empty">No lists configured.</p>
+{% endif %}
+
+<div class="cards">
 {% for item in lists %}
-<section class="list">
-<h2>{{ item["name"] }}</h2>
+<section class="card" data-list-id="{{ item['id'] }}">
+<div class="card-head">
+<div>
+<h2><a href="{{ url_for('list_detail', list_id=item['id']) }}">{{ item["name"] }}</a></h2>
 <div class="url">{{ item["letterboxd_url"] }}</div>
-<p class="meta">{{ item["movie_count"] }} movies{% if item["updated_at"] %} · Last update: {{ item["updated_at"] }}{% endif %}</p>
-<p><strong>Radarr URL:</strong><br>
-<a class="endpoint" href="{{ url_for('radarr_list', list_id=item['id'], _external=True) }}">{{ url_for('radarr_list', list_id=item["id"], _external=True) }}</a></p>
-{% if item["last_error"] %}<p class="error">Last update error: {{ item["last_error"] }}</p>{% endif %}
-<form class="inline" method="post" action="{{ url_for('manual_refresh', list_id=item['id']) }}"><button type="submit">Refresh now</button></form>
-<form class="inline" method="post" action="{{ url_for('delete_list', list_id=item['id']) }}" onsubmit="return confirm('Delete this list?');"><button type="submit">Delete</button></form>
+</div>
+</div>
+
+<div class="stats">
+<span><strong>{{ item["movie_count"] }}</strong> stored movies</span>
+{% if item["updated_at"] %}<span>Last updated {{ item["updated_at"] }}</span>{% endif %}
+</div>
+
+<div class="status" data-status>Checking status...</div>
+<div class="progress" data-progress hidden><span></span></div>
+
+<div class="endpoint">
+<code id="endpoint-{{ item['id'] }}">{{ url_for('radarr_list', list_id=item['id'], _external=True) }}</code>
+<button type="button" onclick="copyEndpoint('{{ item['id'] }}')">Copy URL</button>
+</div>
+
+{% if item["last_error"] %}<div class="status error">Last error: {{ item["last_error"] }}</div>{% endif %}
+
+<div class="actions">
+<a class="button" href="{{ url_for('list_detail', list_id=item['id']) }}">View movies</a>
+<form method="post" action="{{ url_for('manual_refresh', list_id=item['id']) }}">
+<button type="submit">Refresh now</button>
+</form>
+<form method="post" action="{{ url_for('delete_list', list_id=item['id']) }}" onsubmit="return confirm('Delete this list and its stored movie data?');">
+<button class="danger" type="submit">Delete</button>
+</form>
+</div>
 </section>
 {% endfor %}
+</div>
+</main>
+
+<script>
+async function updateStatuses() {
+  const cards = document.querySelectorAll("[data-list-id]");
+  await Promise.all([...cards].map(async card => {
+    const id = card.dataset.listId;
+    const status = card.querySelector("[data-status]");
+    const progress = card.querySelector("[data-progress]");
+    const bar = progress.querySelector("span");
+
+    try {
+      const response = await fetch("/lists/" + id + "/status", {cache:"no-store"});
+      if (!response.ok) return;
+      const data = await response.json();
+
+      status.className = "status " + data.state;
+      status.textContent = data.message || data.state;
+
+      if (data.state === "updating" && data.total > 0) {
+        progress.hidden = false;
+        bar.style.width = Math.min(100, (data.current / data.total) * 100) + "%";
+      } else {
+        progress.hidden = true;
+      }
+    } catch (_) {}
+  }));
+}
+
+async function copyEndpoint(id) {
+  const value = document.getElementById("endpoint-" + id).textContent;
+  await navigator.clipboard.writeText(value);
+  const button = document.querySelector("[data-list-id=\"" + id + "\"] .endpoint button");
+  const old = button.textContent;
+  button.textContent = "Copied";
+  setTimeout(() => button.textContent = old, 1200);
+}
+
+updateStatuses();
+setInterval(updateStatuses, 1500);
+</script>
 </body>
 </html>
