@@ -33,6 +33,7 @@ session.headers.update({"User-Agent": USER_AGENT})
 robots = robotparser.RobotFileParser()
 robots_lock = threading.Lock()
 scrape_lock = threading.Lock()
+scrape_job_lock = threading.Lock()
 refresh_lock = threading.Lock()
 active_refreshes = set()
 last_request_at = 0.0
@@ -171,12 +172,22 @@ def parse_film(path):
     html = get(urljoin("https://letterboxd.com", path))
     soup = BeautifulSoup(html, "html.parser")
 
+    tmdb_id = None
+
     body = soup.find("body")
-    tmdb_id = body.get("data-tmdb-id") if body else None
+    if body:
+        tmdb_id = body.get("data-tmdb-id")
 
     if not tmdb_id:
         match = re.search(r'data-tmdb-id=["\'](\d+)["\']', html)
         tmdb_id = match.group(1) if match else None
+
+    if not tmdb_id:
+        for anchor in soup.select('a[href*="themoviedb.org/movie/"]'):
+            match = re.search(r"themoviedb\.org/movie/(\d+)", anchor.get("href", ""))
+            if match:
+                tmdb_id = match.group(1)
+                break
 
     if not tmdb_id or not tmdb_id.isdigit():
         raise ValueError(f"No TMDB ID found for {path}")
@@ -191,6 +202,13 @@ def parse_film(path):
         match = re.search(r"\b(19|20)\d{2}\b", year_node.get_text(" ", strip=True))
         if match:
             year = int(match.group(0))
+
+    if year is None:
+        for script in soup.select('script[type="application/ld+json"]'):
+            match = re.search(r'"dateCreated"\s*:\s*"((?:19|20)\d{2})', script.get_text())
+            if match:
+                year = int(match.group(1))
+                break
 
     imdb_id = ""
 
@@ -210,33 +228,35 @@ def parse_film(path):
 
 
 def scrape_list(list_url):
-    refresh_robots()
-    movies = {}
-    base = list_url.rstrip("/")
+    with scrape_job_lock:
+        refresh_robots()
+        movies = {}
+        base = list_url.rstrip("/")
 
-    for page in range(1, MAX_PAGES + 1):
-        page_url = f"{base}/" if page == 1 else f"{base}/page/{page}/"
-        html = get(page_url)
-        film_paths = extract_film_paths(html)
+        for page in range(1, MAX_PAGES + 1):
+            page_url = f"{base}/" if page == 1 else f"{base}/page/{page}/"
+            html = get(page_url)
+            film_paths = extract_film_paths(html)
 
-        if not film_paths:
-            break
+            if not film_paths:
+                break
 
-        before = len(movies)
+            before = len(movies)
 
-        for path in film_paths:
-            if len(movies) >= MAX_MOVIES or path in movies:
-                continue
+            for path in film_paths:
+                if len(movies) >= MAX_MOVIES or path in movies:
+                    continue
 
-            try:
-                movies[path] = parse_film(path)
-            except Exception as exc:
-                log.warning("Skipping %s: %s", path, exc)
+                try:
+                    movies[path] = parse_film(path)
+                except Exception as exc:
+                    log.warning("Skipping %s: %s", path, exc)
 
-        if len(movies) == before or len(film_paths) < 20:
-            break
+            if len(movies) == before or len(film_paths) < 20:
+                break
 
-    return list(movies.values())
+        log.info("Scraped %s: %s movies found.", list_url, len(movies))
+        return list(movies.values())
 
 
 def store_movies(list_id, movies):
