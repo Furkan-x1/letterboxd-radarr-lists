@@ -72,10 +72,11 @@ button:hover,.button:hover{border-color:#59616c}
 
 <div class="stats">
 <span><strong>{{ item["movie_count"] }}</strong> stored movies</span>
-{% if item["updated_at"] %}<span>Last updated {{ item["updated_at"] }}</span>{% endif %}
+{% if item["updated_at"] %}<span>Last updated <span class="updated-time" data-updated="{{ item["updated_at"] }}">{{ item["updated_at"] }}</span></span>{% endif %}
 </div>
 
 <div class="status" data-status>Checking status...</div>
+<div class="url" data-next-update></div>
 <div class="progress" data-progress hidden><span></span></div>
 
 <div class="endpoint">
@@ -115,6 +116,7 @@ async function updateStatuses() {
 
       status.className = "status " + data.state;
       status.textContent = data.message || data.state;
+      updateNextUpdate(card, data.updated_at);
 
       if (data.state === "updating" && data.total > 0) {
         progress.hidden = false;
@@ -135,8 +137,38 @@ async function copyEndpoint(id) {
   setTimeout(() => button.textContent = old, 1200);
 }
 
+function updateNextUpdate(card, updatedAt) {
+  const target = card.querySelector("[data-next-update]");
+  if (!target || !updatedAt) {
+    if (target) target.textContent = "";
+    return;
+  }
+
+  const next = new Date(updatedAt).getTime() + 21600000;
+  const remaining = next - Date.now();
+
+  if (remaining <= 0) {
+    target.textContent = "Automatic update is due.";
+    return;
+  }
+
+  const minutes = Math.floor(remaining / 60000);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+
+  if (days > 0) target.textContent = "Next automatic update in " + days + "d " + (hours % 24) + "h";
+  else if (hours > 0) target.textContent = "Next automatic update in " + hours + "h " + (minutes % 60) + "m";
+  else target.textContent = "Next automatic update in " + minutes + "m";
+}
+
 updateStatuses();
 setInterval(updateStatuses, 1500);
+setInterval(() => {
+  document.querySelectorAll("[data-list-id]").forEach(card => {
+    const value = card.querySelector(".updated-time");
+    if (value) updateNextUpdate(card, value.dataset.updated);
+  });
+}, 60000);
 </script>
 </body>
 </html>
