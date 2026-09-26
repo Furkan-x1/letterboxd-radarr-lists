@@ -13,6 +13,8 @@ header{margin-bottom:30px}
 h1{margin:0 0 7px;font-size:30px;letter-spacing:-.02em}
 .subtitle{margin:0;color:var(--muted)}
 .add{display:flex;gap:10px;margin:0 0 28px}
+.global-controls{display:flex;align-items:center;gap:12px;margin:0 0 18px}
+.global-paused{color:#d6b86a}
 .add input{flex:1;min-width:0;background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:9px;padding:12px 14px;font:inherit;outline:none}
 .add input:focus{border-color:var(--accent)}
 button,.button{border:1px solid var(--border);background:var(--panel2);color:var(--text);border-radius:8px;padding:10px 14px;font:inherit;cursor:pointer;text-decoration:none;display:inline-block}
@@ -51,6 +53,15 @@ button:hover,.button:hover{border-color:#59616c}
 </header>
 
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+<div class="global-controls">
+{% if global_pause_until %}
+<form method="post" action="{{ url_for('resume_refresh') }}"><button type="submit">Resume automatic updates</button></form>
+<div class="global-paused" data-global-pause="{{ global_pause_until }}">Automatic updates paused</div>
+{% else %}
+<form method="post" action="{{ url_for('pause_refresh') }}"><button type="submit">Pause automatic updates for 12 hours</button></form>
+{% endif %}
+</div>
 
 <form class="add" method="post" action="{{ url_for('create_list') }}">
 <input name="letterboxd_url" type="text" placeholder="username/watchlist or username/list/example" required>
