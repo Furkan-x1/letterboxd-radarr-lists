@@ -309,6 +309,27 @@ def set_refresh_status(list_id, **values):
             status.update(values)
 
 
+def load_cached_movies(list_id):
+    with db() as connection:
+        rows = connection.execute(
+            """SELECT tmdb_id, imdb_id, title, year, letterboxd_path
+               FROM movies
+               WHERE list_id = ? AND letterboxd_path != ''""",
+            (list_id,),
+        ).fetchall()
+
+    return {
+        row["letterboxd_path"]: {
+            "id": row["tmdb_id"],
+            "imdb_id": row["imdb_id"] or "",
+            "title": row["title"],
+            "release_year": row["year"],
+            "letterboxd_path": row["letterboxd_path"],
+        }
+        for row in rows
+    }
+
+
 def scrape_list(list_id, list_url):
     with scrape_job_lock:
         set_refresh_status(
@@ -321,8 +342,10 @@ def scrape_list(list_id, list_url):
 
         refresh_robots()
         movies = {}
+        cached_movies = load_cached_movies(list_id)
         base = list_url.rstrip("/")
         list_name = None
+        saw_film_paths = False
 
         for page in range(1, MAX_PAGES + 1):
             page_url = f"{base}/" if page == 1 else f"{base}/page/{page}/"
@@ -342,7 +365,9 @@ def scrape_list(list_id, list_url):
             film_paths = extract_film_paths(html)
             log.info("Found %s film paths on %s.", len(film_paths), page_url)
 
-            if not film_paths:
+            if film_paths:
+                saw_film_paths = True
+            else:
                 break
 
             set_refresh_status(
@@ -358,9 +383,20 @@ def scrape_list(list_id, list_url):
                 if len(movies) >= MAX_MOVIES or path in movies:
                     continue
 
+                cached = cached_movies.get(path)
+                if cached:
+                    movies[path] = cached
+                    set_refresh_status(
+                        list_id,
+                        message=f"Using cached film data: {index}/{len(film_paths)}",
+                        current=index,
+                        total=len(film_paths),
+                    )
+                    continue
+
                 set_refresh_status(
                     list_id,
-                    message=f"Processing films: {index}/{len(film_paths)}",
+                    message=f"Fetching new film data: {index}/{len(film_paths)}",
                     current=index,
                     total=len(film_paths),
                 )
@@ -373,8 +409,13 @@ def scrape_list(list_id, list_url):
             if len(movies) == before or len(film_paths) < 20:
                 break
 
-        log.info("Scraped %s: %s movies found.", list_url, len(movies))
-        return list(movies.values()), list_name
+        log.info(
+            "Scraped %s: %s movies found, %s film paths seen.",
+            list_url,
+            len(movies),
+            sum(1 for _ in movies),
+        )
+        return list(movies.values()), list_name, saw_film_paths
 
 
 def store_movies(list_id, movies, watchlist):
@@ -440,12 +481,18 @@ def refresh_list(list_id):
                 message="Starting Letterboxd update...",
             )
 
-            movies, scraped_name = scrape_list(
+            movies, scraped_name, saw_film_paths = scrape_list(
                 list_id,
                 row["letterboxd_url"],
             )
 
             watchlist = is_watchlist_url(row["letterboxd_url"])
+
+            if watchlist and saw_film_paths and not movies:
+                raise RuntimeError(
+                    "Letterboxd films were found, but none could be processed."
+                )
+
             store_movies(list_id, movies, watchlist)
 
             with db() as connection:
@@ -528,7 +575,23 @@ def updater_loop():
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    with db() as connection:
+        list_count = connection.execute(
+            "SELECT COUNT(*) FROM lists"
+        ).fetchone()[0]
+        movie_count = connection.execute(
+            "SELECT COUNT(*) FROM movies"
+        ).fetchone()[0]
+
+    with refresh_lock:
+        active_count = len(active_refreshes)
+
+    return {
+        "status": "ok",
+        "lists": list_count,
+        "movies": movie_count,
+        "active_updates": active_count,
+    }
 
 
 @app.get("/")
@@ -602,6 +665,7 @@ def list_status(list_id):
         {
             "state": "idle",
             "message": "Up to date" if row["updated_at"] else "Not updated yet",
+            "updated_at": row["updated_at"],
             "current": 0,
             "total": 0,
         }
@@ -633,7 +697,7 @@ def create_list():
         connection.execute(
             """INSERT INTO lists(id, letterboxd_url, name, created_at)
                VALUES (?, ?, ?, ?)""",
-            (list_id, letterboxd_url, name, now()),
+            (list_id, name, now()),
         )
 
     start_refresh(list_id)
