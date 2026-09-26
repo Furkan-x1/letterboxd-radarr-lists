@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ item["name"] }} · Letterboxd Radarr Lists</title>
+<style>
+:root{color-scheme:dark;--bg:#111315;--panel:#191c20;--panel2:#20242a;--border:#30353d;--text:#f1f3f5;--muted:#9da5af;--accent:#00c030}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+main{max-width:1050px;margin:0 auto;padding:42px 22px 60px}
+a{color:var(--accent)}
+.back{display:inline-block;margin-bottom:24px;color:var(--muted);text-decoration:none}
+h1{margin:0 0 5px;font-size:28px}.meta{color:var(--muted);margin-bottom:25px}
+.table{background:var(--panel);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.row{display:grid;grid-template-columns:minmax(0,1fr) 90px 120px;gap:14px;padding:12px 16px;border-bottom:1px solid var(--border);align-items:center}
+.row:last-child{border-bottom:0}.head{color:var(--muted);font-size:13px;background:var(--panel2)}
+.title{min-width:0}.title a{color:var(--text);text-decoration:none}.title a:hover{text-decoration:underline}
+.year{color:var(--muted)}.imdb{color:var(--muted);font-size:12px;margin-top:2px}
+.empty{color:var(--muted);padding:30px;text-align:center}
+@media(max-width:600px){.row{grid-template-columns:minmax(0,1fr) 65px}.head .link-col,.row .link-col{display:none}}
+</style>
+</head>
+<body>
+<main>
+<a class="back" href="{{ url_for('index') }}">← Back to lists</a>
+<h1>{{ item["name"] }}</h1>
+<div class="meta">
+<a href="{{ item["letterboxd_url"] }}" target="_blank" rel="noopener">{{ item["letterboxd_url"] }}</a>
+· {{ movies|length }} stored movies
+</div>
+
+<div class="table">
+<div class="row head"><div>Movie</div><div>Year</div><div class="link-col">Letterboxd</div></div>
+{% for movie in movies %}
+<div class="row">
+<div class="title">
+<a href="https://letterboxd.com{{ movie['letterboxd_path'] }}" target="_blank" rel="noopener">{{ movie["title"] }}</a>
+{% if movie["imdb_id"] %}<div class="imdb">{{ movie["imdb_id"] }}</div>{% endif %}
+</div>
+<div class="year">{{ movie["year"] or "—" }}</div>
+<div class="link-col"><a href="https://letterboxd.com{{ movie['letterboxd_path'] }}" target="_blank" rel="noopener">Open</a></div>
+</div>
+{% endfor %}
+{% if not movies %}<div class="empty">No stored movies.</div>{% endif %}
+</div>
+</main>
+</body>
+</html>
