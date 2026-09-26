@@ -33,6 +33,7 @@ button:hover,.button:hover{border-color:#59616c}
 .status.updating{color:var(--text)}
 .status.completed{color:var(--accent)}
 .status.error{color:var(--danger);background:#2a171a}
+.status.paused{color:#d6b86a;background:#292516}
 .progress{height:5px;background:#2c3138;border-radius:99px;overflow:hidden;margin-top:8px}
 .progress>span{display:block;height:100%;background:var(--accent);width:0;transition:width .2s}
 .endpoint{display:flex;gap:8px;align-items:center;margin:16px 0}
@@ -52,7 +53,7 @@ button:hover,.button:hover{border-color:#59616c}
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
 
 <form class="add" method="post" action="{{ url_for('create_list') }}">
-<input name="letterboxd_url" type="text" placeholder="xVarga/watchlist or xVarga/list/example" required>
+<input name="letterboxd_url" type="text" placeholder="username/watchlist or username/list/example" required>
 <button class="primary" type="submit">Add list</button>
 </form>
 
@@ -90,6 +91,9 @@ button:hover,.button:hover{border-color:#59616c}
 <a class="button" href="{{ url_for('list_detail', list_id=item['id']) }}">View movies</a>
 <form method="post" action="{{ url_for('manual_refresh', list_id=item['id']) }}">
 <button type="submit">Refresh now</button>
+</form>
+<form method="post" action="{{ url_for('toggle_list', list_id=item['id']) }}">
+<button type="submit">{{ "Pause updates" if item["enabled"] else "Resume updates" }}</button>
 </form>
 <form method="post" action="{{ url_for('delete_list', list_id=item['id']) }}" onsubmit="return confirm('Delete this list and its stored movie data?');">
 <button class="danger" type="submit">Delete</button>
