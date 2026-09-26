@@ -168,26 +168,35 @@ def extract_film_paths(html):
     return result
 
 
+def extract_tmdb_id(html):
+    soup = BeautifulSoup(html, "html.parser")
+
+    patterns = (
+        r'tmdb[_-]?id["\']?\s*[:=]\s*["\']?(\d+)',
+        r'themoviedb\.org/movie/(\d+)',
+        r'tmdb\.org/movie/(\d+)',
+    )
+
+    for pattern in patterns:
+        match = re.search(pattern, html, re.IGNORECASE)
+        if match:
+            return match.group(1)
+
+    for anchor in soup.select('a[href*="themoviedb.org/movie/"], a[href*="tmdb.org/movie/"]'):
+        match = re.search(r"(?:themoviedb|tmdb)\.org/movie/(\d+)", anchor.get("href", ""))
+        if match:
+            return match.group(1)
+
+    return None
+
+
 def parse_film(path):
     html = get(urljoin("https://letterboxd.com", path))
     soup = BeautifulSoup(html, "html.parser")
 
     tmdb_id = None
 
-    body = soup.find("body")
-    if body:
-        tmdb_id = body.get("data-tmdb-id")
-
-    if not tmdb_id:
-        match = re.search(r'data-tmdb-id=["\'](\d+)["\']', html)
-        tmdb_id = match.group(1) if match else None
-
-    if not tmdb_id:
-        for anchor in soup.select('a[href*="themoviedb.org/movie/"]'):
-            match = re.search(r"themoviedb\.org/movie/(\d+)", anchor.get("href", ""))
-            if match:
-                tmdb_id = match.group(1)
-                break
+    tmdb_id = extract_tmdb_id(html)
 
     if not tmdb_id or not tmdb_id.isdigit():
         raise ValueError(f"No TMDB ID found for {path}")
@@ -237,6 +246,7 @@ def scrape_list(list_url):
             page_url = f"{base}/" if page == 1 else f"{base}/page/{page}/"
             html = get(page_url)
             film_paths = extract_film_paths(html)
+            log.info("Found %s film paths on %s.", len(film_paths), page_url)
 
             if not film_paths:
                 break
