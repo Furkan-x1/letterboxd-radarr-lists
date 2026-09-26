@@ -12,7 +12,7 @@ from urllib.parse import urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
-from flask import Flask, Response, redirect, render_template, request, url_for
+from flask import Flask, Response, jsonify, redirect, render_template, request, url_for
 
 DB_PATH = os.getenv("DB_PATH", "/data/app.db")
 PORT = int(os.getenv("PORT", "5000"))
@@ -30,12 +30,14 @@ app = Flask(__name__)
 log = logging.getLogger("letterboxd-radarr-lists")
 session = requests.Session()
 session.headers.update({"User-Agent": USER_AGENT})
+
 robots = robotparser.RobotFileParser()
+robots_loaded = False
 robots_lock = threading.Lock()
 scrape_lock = threading.Lock()
 scrape_job_lock = threading.Lock()
 refresh_lock = threading.Lock()
-active_refreshes = set()
+active_refreshes = {}
 last_request_at = 0.0
 
 
@@ -71,6 +73,15 @@ def init_db():
             )"""
         )
 
+        columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(movies)")
+        }
+        if "letterboxd_path" not in columns:
+            connection.execute(
+                "ALTER TABLE movies ADD COLUMN letterboxd_path TEXT NOT NULL DEFAULT ''"
+            )
+
 
 def now():
     return datetime.now(timezone.utc).isoformat()
@@ -78,21 +89,42 @@ def now():
 
 def normalize_letterboxd_url(value):
     value = value.strip()
+
+    if not value:
+        raise ValueError("Enter a Letterboxd list URL or path.")
+
+    if not re.match(r"^https?://", value, re.IGNORECASE):
+        value = "https://letterboxd.com/" + value.lstrip("/")
+
     parsed = urlparse(value)
 
-    if parsed.scheme != "https" or parsed.netloc.lower() != "letterboxd.com":
-        raise ValueError("Only https://letterboxd.com/... URLs are supported.")
+    if parsed.scheme != "https" or parsed.netloc.lower() not in {
+        "letterboxd.com",
+        "www.letterboxd.com",
+    }:
+        raise ValueError("Only Letterboxd URLs are supported.")
 
     path = parsed.path.rstrip("/") + "/"
 
-    if not re.match(r"^/[^/]+/(watchlist|films)/$", path) and "/list/" not in path:
-        raise ValueError("Enter a public Letterboxd list, watchlist, or films URL.")
+    if not re.match(r"^/[^/]+/(watchlist|films)/$", path) and not re.match(
+        r"^/[^/]+/list/[^/]+/$", path
+    ):
+        raise ValueError(
+            "Enter a public Letterboxd path such as xVarga/watchlist or xVarga/list/example."
+        )
 
     return urljoin("https://letterboxd.com", path)
 
 
+def is_watchlist_url(value):
+    path = urlparse(value).path.rstrip("/")
+    return bool(re.match(r"^/[^/]+/watchlist$", path))
+
+
 def refresh_robots():
-    global robots
+    global robots, robots_loaded
+
+    log.info("Fetching Letterboxd robots.txt.")
     response = session.get(
         "https://letterboxd.com/robots.txt",
         timeout=REQUEST_TIMEOUT,
@@ -104,10 +136,15 @@ def refresh_robots():
 
     with robots_lock:
         robots = parser
+        robots_loaded = True
+
+    log.info("Letterboxd robots.txt loaded.")
 
 
 def allowed(url):
     with robots_lock:
+        if not robots_loaded:
+            return False
         return robots.can_fetch(USER_AGENT, url)
 
 
@@ -168,6 +205,28 @@ def extract_film_paths(html):
     return result
 
 
+def extract_list_name(html, fallback):
+    soup = BeautifulSoup(html, "html.parser")
+
+    heading = soup.select_one("h1")
+    if heading:
+        value = heading.get_text(" ", strip=True)
+        if value:
+            return value
+
+    title = soup.select_one("title")
+    if title:
+        value = re.sub(
+            r"\s*[•|]\s*Letterboxd.*$",
+            "",
+            title.get_text(" ", strip=True),
+        )
+        if value:
+            return value
+
+    return fallback
+
+
 def extract_tmdb_id(html):
     soup = BeautifulSoup(html, "html.parser")
 
@@ -182,8 +241,13 @@ def extract_tmdb_id(html):
         if match:
             return match.group(1)
 
-    for anchor in soup.select('a[href*="themoviedb.org/movie/"], a[href*="tmdb.org/movie/"]'):
-        match = re.search(r"(?:themoviedb|tmdb)\.org/movie/(\d+)", anchor.get("href", ""))
+    for anchor in soup.select(
+        'a[href*="themoviedb.org/movie/"], a[href*="tmdb.org/movie/"]'
+    ):
+        match = re.search(
+            r"(?:themoviedb|tmdb)\.org/movie/(\d+)",
+            anchor.get("href", ""),
+        )
         if match:
             return match.group(1)
 
@@ -193,8 +257,6 @@ def extract_tmdb_id(html):
 def parse_film(path):
     html = get(urljoin("https://letterboxd.com", path))
     soup = BeautifulSoup(html, "html.parser")
-
-    tmdb_id = None
 
     tmdb_id = extract_tmdb_id(html)
 
@@ -214,7 +276,10 @@ def parse_film(path):
 
     if year is None:
         for script in soup.select('script[type="application/ld+json"]'):
-            match = re.search(r'"dateCreated"\s*:\s*"((?:19|20)\d{2})', script.get_text())
+            match = re.search(
+                r'"dateCreated"\s*:\s*"((?:19|20)\d{2})',
+                script.get_text(),
+            )
             if match:
                 year = int(match.group(1))
                 break
@@ -233,29 +298,72 @@ def parse_film(path):
         "title": title,
         "release_year": year,
         "imdb_id": imdb_id,
+        "letterboxd_path": path,
     }
 
 
-def scrape_list(list_url):
+def set_refresh_status(list_id, **values):
+    with refresh_lock:
+        status = active_refreshes.get(list_id)
+        if status is not None:
+            status.update(values)
+
+
+def scrape_list(list_id, list_url):
     with scrape_job_lock:
+        set_refresh_status(
+            list_id,
+            state="updating",
+            message="Fetching Letterboxd list...",
+            current=0,
+            total=0,
+        )
+
         refresh_robots()
         movies = {}
         base = list_url.rstrip("/")
+        list_name = None
 
         for page in range(1, MAX_PAGES + 1):
             page_url = f"{base}/" if page == 1 else f"{base}/page/{page}/"
+            set_refresh_status(
+                list_id,
+                message=f"Fetching list page {page}...",
+            )
+
             html = get(page_url)
+
+            if page == 1:
+                list_name = extract_list_name(
+                    html,
+                    base.rsplit("/", 1)[-1],
+                )
+
             film_paths = extract_film_paths(html)
             log.info("Found %s film paths on %s.", len(film_paths), page_url)
 
             if not film_paths:
                 break
 
+            set_refresh_status(
+                list_id,
+                message=f"Found {len(film_paths)} films on page {page}.",
+                total=len(film_paths),
+                current=0,
+            )
+
             before = len(movies)
 
-            for path in film_paths:
+            for index, path in enumerate(film_paths, start=1):
                 if len(movies) >= MAX_MOVIES or path in movies:
                     continue
+
+                set_refresh_status(
+                    list_id,
+                    message=f"Processing films: {index}/{len(film_paths)}",
+                    current=index,
+                    total=len(film_paths),
+                )
 
                 try:
                     movies[path] = parse_film(path)
@@ -266,15 +374,27 @@ def scrape_list(list_url):
                 break
 
         log.info("Scraped %s: %s movies found.", list_url, len(movies))
-        return list(movies.values())
+        return list(movies.values()), list_name
 
 
-def store_movies(list_id, movies):
+def store_movies(list_id, movies, watchlist):
     with db() as connection:
-        connection.execute("DELETE FROM movies WHERE list_id = ?", (list_id,))
+        if watchlist:
+            connection.execute(
+                "DELETE FROM movies WHERE list_id = ?",
+                (list_id,),
+            )
+
         connection.executemany(
-            """INSERT INTO movies(list_id, tmdb_id, imdb_id, title, year)
-               VALUES (?, ?, ?, ?, ?)""",
+            """INSERT INTO movies(
+                list_id, tmdb_id, imdb_id, title, year, letterboxd_path
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(list_id, tmdb_id) DO UPDATE SET
+                imdb_id = excluded.imdb_id,
+                title = excluded.title,
+                year = excluded.year,
+                letterboxd_path = excluded.letterboxd_path""",
             [
                 (
                     list_id,
@@ -282,6 +402,7 @@ def store_movies(list_id, movies):
                     movie["imdb_id"],
                     movie["title"],
                     movie["release_year"],
+                    movie["letterboxd_path"],
                 )
                 for movie in movies
             ],
@@ -294,7 +415,13 @@ def refresh_list(list_id):
             log.info("Refresh already running for list %s; skipping.", list_id)
             return
 
-        active_refreshes.add(list_id)
+        active_refreshes[list_id] = {
+            "state": "starting",
+            "message": "Starting update...",
+            "current": 0,
+            "total": 0,
+            "started_at": now(),
+        }
 
     try:
         with db() as connection:
@@ -307,20 +434,48 @@ def refresh_list(list_id):
             return
 
         try:
-            movies = scrape_list(row["letterboxd_url"])
+            set_refresh_status(
+                list_id,
+                state="updating",
+                message="Starting Letterboxd update...",
+            )
 
-            if not movies:
-                raise RuntimeError("No movies were found in the Letterboxd list.")
+            movies, scraped_name = scrape_list(
+                list_id,
+                row["letterboxd_url"],
+            )
 
-            store_movies(list_id, movies)
+            watchlist = is_watchlist_url(row["letterboxd_url"])
+            store_movies(list_id, movies, watchlist)
 
             with db() as connection:
                 connection.execute(
-                    "UPDATE lists SET updated_at = ?, last_error = NULL WHERE id = ?",
+                    """UPDATE lists
+                       SET updated_at = ?, last_error = NULL
+                       WHERE id = ?""",
                     (now(), list_id),
                 )
 
-            log.info("Updated %s: %s movies.", row["letterboxd_url"], len(movies))
+                if not row["updated_at"] and scraped_name:
+                    connection.execute(
+                        "UPDATE lists SET name = ? WHERE id = ?",
+                        (scraped_name, list_id),
+                    )
+
+            set_refresh_status(
+                list_id,
+                state="completed",
+                message=f"Updated successfully: {len(movies)} films.",
+                current=len(movies),
+                total=len(movies),
+            )
+
+            log.info(
+                "Updated %s: %s movies (%s mode).",
+                row["letterboxd_url"],
+                len(movies),
+                "watchlist" if watchlist else "persistent list",
+            )
 
         except Exception as exc:
             with db() as connection:
@@ -328,10 +483,19 @@ def refresh_list(list_id):
                     "UPDATE lists SET last_error = ? WHERE id = ?",
                     (str(exc), list_id),
                 )
+
+            set_refresh_status(
+                list_id,
+                state="error",
+                message=str(exc),
+            )
             log.exception("Failed to update %s", row["letterboxd_url"])
+
+        time.sleep(2)
+
     finally:
         with refresh_lock:
-            active_refreshes.discard(list_id)
+            active_refreshes.pop(list_id, None)
 
 
 def start_refresh(list_id):
@@ -379,6 +543,69 @@ def index():
         ).fetchall()
 
     return render_template("index.html", lists=lists)
+
+
+@app.get("/lists/<list_id>")
+def list_detail(list_id):
+    with db() as connection:
+        item = connection.execute(
+            "SELECT * FROM lists WHERE id = ?",
+            (list_id,),
+        ).fetchone()
+
+        if not item:
+            return redirect(url_for("index"))
+
+        movies = connection.execute(
+            """SELECT tmdb_id, imdb_id, title, year, letterboxd_path
+               FROM movies
+               WHERE list_id = ?
+               ORDER BY rowid""",
+            (list_id,),
+        ).fetchall()
+
+    return render_template(
+        "list.html",
+        item=item,
+        movies=movies,
+    )
+
+
+@app.get("/lists/<list_id>/status")
+def list_status(list_id):
+    with db() as connection:
+        row = connection.execute(
+            "SELECT updated_at, last_error FROM lists WHERE id = ?",
+            (list_id,),
+        ).fetchone()
+
+    if not row:
+        return jsonify({"error": "List not found"}), 404
+
+    with refresh_lock:
+        active = active_refreshes.get(list_id)
+
+    if active:
+        return jsonify(active)
+
+    if row["last_error"]:
+        return jsonify(
+            {
+                "state": "error",
+                "message": row["last_error"],
+                "current": 0,
+                "total": 0,
+            }
+        )
+
+    return jsonify(
+        {
+            "state": "idle",
+            "message": "Up to date" if row["updated_at"] else "Not updated yet",
+            "current": 0,
+            "total": 0,
+        }
+    )
 
 
 @app.post("/lists")
