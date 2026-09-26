@@ -1,52 +1,123 @@
 # Letterboxd Radarr Lists
 
-A self-hosted service that turns public Letterboxd lists into stable JSON URLs that Radarr can use as import lists.
+A self-hosted service that turns public Letterboxd lists and watchlists into stable URLs that Radarr can use as custom lists.
 
 ## How it works
 
-1. Open the web interface.
-2. Paste a public Letterboxd list or watchlist URL.
-3. The service scrapes the list and stores its movie data locally.
-4. A stable Radarr URL is generated for that list.
-5. Radarr reads the generated URL instead of scraping Letterboxd directly.
-6. The service periodically refreshes the stored list.
+1. Add a public Letterboxd list or watchlist through the web interface.
+2. The service retrieves and stores the movie data locally.
+3. A stable URL is generated for Radarr.
+4. The list is automatically updated periodically.
 
-The service uses Letterboxd TMDB IDs as the primary movie identifier. It does not need a Radarr API key and does not add movies to Radarr.
+The service does not require a Radarr API key and does not add movies directly to Radarr.
 
-## Anti-abuse measures
+## Installation
 
-The service is intentionally conservative when accessing Letterboxd:
+### Requirements
 
-- respects Letterboxd robots.txt;
-- uses a descriptive User-Agent;
-- limits request frequency;
-- waits after HTTP 429 responses;
-- stores scraped results locally;
-- refreshes lists periodically instead of on every Radarr request;
-- limits pages and movies per list.
+- Docker
+- Docker Compose
 
-The default refresh interval is 6 hours and the default delay between Letterboxd requests is 2 seconds.
+Clone the repository:
 
-## Local deployment
+```bash
+git clone https://github.com/Furkan-x1/letterboxd-radarr-lists.git
+cd letterboxd-radarr-lists
+```
+
+Start the service:
 
 ```bash
 docker compose up -d --build
 ```
 
-Open `http://localhost:5000/`.
+The web interface is available at:
 
-The database is stored in `./data/app.db`.
+```text
+http://localhost:5000
+```
+
+For another machine, use the Docker host's IP address:
+
+```text
+http://192.168.1.100:5000
+```
+
+## Usage
+
+Open the web interface and enter a public Letterboxd list.
+
+Both full URLs and shorthand paths are supported:
+
+```text
+https://letterboxd.com/username/watchlist/
+username/watchlist
+
+https://letterboxd.com/username/list/example/
+username/list/example
+```
+
+After adding a list, the service generates a Radarr URL such as:
+
+```text
+http://192.168.1.100:5000/radarr/abc123def456
+```
 
 ## Radarr
 
-After adding a list, the web interface displays a stable URL such as:
+In Radarr, add the generated URL as an **HTTP / Custom List** source.
 
+The service returns movie information as JSON. Radarr reads this endpoint when updating the list.
+
+No Radarr API key is required.
+
+> The default Docker setup uses HTTP on port `5000`. Use `http://`, not `https://`, unless you have configured a reverse proxy with HTTPS.
+
+## Updates
+
+Lists are automatically updated every **12 hours** by default.
+
+You can also:
+
+- manually refresh a list;
+- pause automatic updates for a list;
+- pause all automatic updates for 12 hours.
+
+The service caches previously retrieved movie data and uses a delay between requests to avoid unnecessary requests to Letterboxd.
+
+## Configuration
+
+The main settings are configured in `compose.yml`:
+
+```yaml
+environment:
+  - TZ=Europe/Istanbul
+  - UPDATE_INTERVAL_SECONDS=43200
+  - LETTERBOXD_REQUEST_DELAY_SECONDS=3
+  - LETTERBOXD_REQUEST_TIMEOUT_SECONDS=20
+  - MAX_PAGES_PER_LIST=100
+  - MAX_MOVIES_PER_LIST=5000
 ```
-http://your-server:5000/radarr/abc123def456
+
+The database is stored in:
+
+```text
+./data/app.db
 ```
 
-Use that URL in Radarr's HTTP/Custom List source.
+This directory should be preserved when updating or recreating the container.
 
-## Scope
+## Updating
 
-The first version intentionally focuses on maintaining stable Radarr-compatible endpoints from public Letterboxd lists. More advanced features can be added later.
+From the project directory:
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+To view logs:
+
+```bash
+docker logs -f letterboxd-radarr-lists
+```
