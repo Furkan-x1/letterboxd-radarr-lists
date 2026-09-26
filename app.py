@@ -39,6 +39,7 @@ scrape_job_lock = threading.Lock()
 refresh_lock = threading.Lock()
 active_refreshes = {}
 global_pause_until = 0.0
+refresh_cancel_requested = False
 last_request_at = 0.0
 
 
@@ -168,12 +169,25 @@ def throttle():
         last_request_at = time.monotonic()
 
 
+class RefreshCancelled(Exception):
+    pass
+
+
+def check_refresh_cancelled():
+    if refresh_cancel_requested:
+        raise RefreshCancelled("Refresh cancelled by user.")
+
+
 def get(url):
+    check_refresh_cancelled()
+
     if not allowed(url):
         raise RuntimeError(f"robots.txt disallows {url}")
 
     throttle()
     response = session.get(url, timeout=REQUEST_TIMEOUT)
+
+    check_refresh_cancelled()
 
     if response.status_code == 429:
         retry_after = response.headers.get("Retry-After", "60")
@@ -184,6 +198,7 @@ def get(url):
 
         log.warning("Letterboxd returned 429; waiting %s seconds.", delay)
         time.sleep(delay)
+        check_refresh_cancelled()
         throttle()
         response = session.get(url, timeout=REQUEST_TIMEOUT)
 
@@ -390,6 +405,8 @@ def scrape_list(list_id, list_url):
             before = len(movies)
 
             for index, path in enumerate(film_paths, start=1):
+                check_refresh_cancelled()
+
                 if len(movies) >= MAX_MOVIES or path in movies:
                     continue
 
@@ -539,6 +556,13 @@ def refresh_list(list_id, force=False):
                 "watchlist" if watchlist else "persistent list",
             )
 
+        except RefreshCancelled as exc:
+            set_refresh_status(
+                list_id,
+                state="paused",
+                message="Update stopped by user.",
+            )
+            log.info("Update stopped for %s.", row["letterboxd_url"])
         except Exception as exc:
             with db() as connection:
                 connection.execute(
@@ -592,15 +616,17 @@ def updater_loop():
 
 @app.post("/pause-refresh")
 def pause_refresh():
-    global global_pause_until
+    global global_pause_until, refresh_cancel_requested
     global_pause_until = time.time() + UPDATE_INTERVAL
+    refresh_cancel_requested = True
     return redirect(url_for("index"))
 
 
 @app.post("/resume-refresh")
 def resume_refresh():
-    global global_pause_until
+    global global_pause_until, refresh_cancel_requested
     global_pause_until = 0.0
+    refresh_cancel_requested = False
     return redirect(url_for("index"))
 
 
