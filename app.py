@@ -1506,7 +1506,8 @@ def backup_database():
 
     try:
         source.backup(target)
-        data = target.serialize()    finally:
+        data = target.serialize()
+    finally:
         target.close()
         source.close()
 
