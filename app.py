@@ -523,17 +523,19 @@ def scrape_list(list_id, list_url):
                     movies[path] = cached
                     set_refresh_status(
                         list_id,
-                        message=f"Using cached film data: {index}/{len(film_paths)}",
+                        message=f"Page {page} · cached film {index}/{len(film_paths)}",
                         current=index,
                         total=len(film_paths),
+                        page=page,
                     )
                     continue
 
                 set_refresh_status(
                     list_id,
-                    message=f"Fetching new film data: {index}/{len(film_paths)}",
+                    message=f"Page {page} · fetching film {index}/{len(film_paths)}",
                     current=index,
                     total=len(film_paths),
+                    page=page,
                 )
 
                 try:
