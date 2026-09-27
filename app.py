@@ -604,6 +604,8 @@ def refresh_list(list_id, force=False):
             "started_at": now(),
         }
 
+    history_id = create_history(list_id)
+
     try:
         with db() as connection:
             row = connection.execute(
@@ -621,12 +623,16 @@ def refresh_list(list_id, force=False):
                 message="Starting Letterboxd update...",
             )
 
+            old_paths = set(load_cached_movies(list_id))
             movies, scraped_name, saw_film_paths = scrape_list(
                 list_id,
                 row["letterboxd_url"],
             )
 
             watchlist = is_watchlist_url(row["letterboxd_url"])
+            new_paths = {movie["letterboxd_path"] for movie in movies}
+            added_count = len(new_paths - old_paths)
+            removed_count = len(old_paths - new_paths) if watchlist else 0
 
             if watchlist and saw_film_paths and not movies:
                 raise RuntimeError(
