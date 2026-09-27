@@ -168,6 +168,26 @@ def get_global_pause_until():
     return value
 
 
+def create_history(list_id):
+    with db() as connection:
+        cursor = connection.execute(
+            "INSERT INTO update_history(list_id, started_at, state) VALUES (?, ?, 'updating')",
+            (list_id, now()),
+        )
+        return cursor.lastrowid
+
+
+def finish_history(history_id, state, movie_count=0, added_count=0, removed_count=0, message=""):
+    with db() as connection:
+        connection.execute(
+            """UPDATE update_history
+               SET completed_at = ?, state = ?, movie_count = ?, added_count = ?,
+                   removed_count = ?, message = ?
+               WHERE id = ?""",
+            (now(), state, movie_count, added_count, removed_count, message, history_id),
+        )
+
+
 def normalize_letterboxd_url(value):
     value = value.strip()
 
