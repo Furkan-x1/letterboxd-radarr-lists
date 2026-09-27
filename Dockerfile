@@ -7,4 +7,4 @@ COPY templates ./templates
 RUN mkdir -p /data
 ENV PYTHONUNBUFFERED=1
 EXPOSE 5000
-CMD ["sh", "-c", "python -c 'import os,pathlib; p=pathlib.Path(\"/app/templates/index.html\"); p.write_text(p.read_text().replace(\"__TIME_ZONE__\", os.getenv(\"TZ\", \"UTC\")))' && exec python app.py"]
+CMD ["python", "app.py"]
