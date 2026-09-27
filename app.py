@@ -777,6 +777,34 @@ def refresh_status():
     })
 
 
+@app.get("/status")
+def status_page():
+    with db() as connection:
+        list_count = connection.execute("SELECT COUNT(*) FROM lists").fetchone()[0]
+        movie_count = connection.execute("SELECT COUNT(*) FROM movies").fetchone()[0]
+        history_count = connection.execute("SELECT COUNT(*) FROM update_history").fetchone()[0]
+
+    with robots_lock:
+        robots_ok = robots_loaded
+
+    with refresh_lock:
+        active_count = len(active_refreshes)
+
+    return render_template(
+        "status.html",
+        list_count=list_count,
+        movie_count=movie_count,
+        history_count=history_count,
+        robots_loaded=robots_ok,
+        pause_until=get_global_pause_until(),
+        active_updates=active_count,
+        update_interval=UPDATE_INTERVAL,
+        updater_poll=UPDATER_POLL_SECONDS,
+        request_delay=REQUEST_DELAY,
+        retry_attempts=RETRY_ATTEMPTS,
+    )
+
+
 @app.get("/health")
 def health():
     with db() as connection:
