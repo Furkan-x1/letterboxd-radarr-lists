@@ -23,6 +23,8 @@ MAX_PAGES = int(os.getenv("MAX_PAGES_PER_LIST", "100"))
 MAX_MOVIES = int(os.getenv("MAX_MOVIES_PER_LIST", "5000"))
 UPDATER_POLL_SECONDS = int(os.getenv("UPDATER_POLL_SECONDS", "60"))
 RETRY_ATTEMPTS = int(os.getenv("LETTERBOXD_RETRY_ATTEMPTS", "3"))
+POST_RATE_LIMIT_WINDOW = int(os.getenv("POST_RATE_LIMIT_WINDOW_SECONDS", "60"))
+POST_RATE_LIMIT_MAX = int(os.getenv("POST_RATE_LIMIT_MAX", "20"))
 USER_AGENT = os.getenv(
     "USER_AGENT",
     "LetterboxdRadarrLists/0.1",
@@ -753,13 +755,13 @@ def updater_loop():
 
 def post_allowed():
     ip = request.remote_addr or "unknown"
-    cutoff = time.monotonic() - 60
+    cutoff = time.monotonic() - POST_RATE_LIMIT_WINDOW
     with post_rate_lock:
         timestamps = [
             value for value in post_rate_limit.get(ip, [])
             if value > cutoff
         ]
-        if len(timestamps) >= 20:
+        if len(timestamps) >= POST_RATE_LIMIT_MAX:
             post_rate_limit[ip] = timestamps
             return False
         timestamps.append(time.monotonic())
