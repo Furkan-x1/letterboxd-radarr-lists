@@ -1014,6 +1014,10 @@ def create_list():
             error=str(exc),
             lists=[],
             update_interval_ms=UPDATE_INTERVAL * 1000,
+            global_pause_until=get_global_pause_until(),
+            active_count=0,
+            due_count=0,
+            time_zone=os.getenv("TZ", "UTC"),
         ), 400
 
     with db() as connection:
@@ -1030,9 +1034,11 @@ def create_list():
 
     with db() as connection:
         connection.execute(
-            """INSERT INTO lists(id, letterboxd_url, name, created_at)
-               VALUES (?, ?, ?, ?)""",
-            (list_id, letterboxd_url, name, now()),
+            """INSERT INTO lists(
+                id, letterboxd_url, name, created_at, update_interval_seconds
+            )
+            VALUES (?, ?, ?, ?, ?)""",
+            (list_id, letterboxd_url, name, now(), UPDATE_INTERVAL),
         )
 
     start_refresh(list_id)
@@ -1048,7 +1054,26 @@ def manual_refresh(list_id):
         ).fetchone()
 
     if exists:
-        start_refresh(list_id)
+        start_refresh(list_id, force=True)
+
+    return redirect(url_for("index"))
+
+
+@app.post("/lists/<list_id>/interval")
+def set_interval(list_id):
+    try:
+        value = int(request.form.get("update_interval_seconds", ""))
+    except ValueError:
+        return redirect(url_for("index"))
+
+    if value not in {21600, 43200, 86400}:
+        return redirect(url_for("index"))
+
+    with db() as connection:
+        connection.execute(
+            "UPDATE lists SET update_interval_seconds = ? WHERE id = ?",
+            (value, list_id),
+        )
 
     return redirect(url_for("index"))
 
@@ -1074,6 +1099,7 @@ def toggle_list(list_id):
 def delete_list(list_id):
     with db() as connection:
         connection.execute("DELETE FROM movies WHERE list_id = ?", (list_id,))
+        connection.execute("DELETE FROM update_history WHERE list_id = ?", (list_id,))
         connection.execute("DELETE FROM lists WHERE id = ?", (list_id,))
 
     return redirect(url_for("index"))
