@@ -17,7 +17,7 @@ from flask import Flask, Response, jsonify, redirect, render_template, request, 
 DB_PATH = os.getenv("DB_PATH", "/data/app.db")
 PORT = int(os.getenv("PORT", "5000"))
 UPDATE_INTERVAL = int(os.getenv("UPDATE_INTERVAL_SECONDS", "43200"))
-REQUEST_DELAY = float(os.getenv("LETTERBOXD_REQUEST_DELAY_SECONDS", "2"))
+REQUEST_DELAY = float(os.getenv("LETTERBOXD_REQUEST_DELAY_SECONDS", "3"))
 REQUEST_TIMEOUT = int(os.getenv("LETTERBOXD_REQUEST_TIMEOUT_SECONDS", "20"))
 MAX_PAGES = int(os.getenv("MAX_PAGES_PER_LIST", "100"))
 MAX_MOVIES = int(os.getenv("MAX_MOVIES_PER_LIST", "5000"))
@@ -593,10 +593,10 @@ def store_movies(list_id, movies, watchlist):
 
 
 def refresh_list(list_id, force=False):
-    global global_pause_until
+    pause_until = get_global_pause_until()
 
     with refresh_lock:
-        if not force and global_pause_until > time.time():
+        if not force and pause_until > time.time():
             log.info("Global refresh pause is active; skipping list %s.", list_id)
             return
         if list_id in active_refreshes:
