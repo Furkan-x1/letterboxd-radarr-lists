@@ -65,6 +65,8 @@ Each list can be configured to update every **6, 12, or 24 hours**.
 
 You can also:
 
+- import a previously exported JSON backup;
+- discover public lists from a Letterboxd profile;
 - refresh a list manually;
 - pause automatic updates for an individual list;
 - pause all automatic updates for 12 hours;
