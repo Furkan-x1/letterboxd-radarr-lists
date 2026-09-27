@@ -851,11 +851,69 @@ def list_detail(list_id):
         if not item:
             return redirect(url_for("index"))
 
+        query = request.args.get("q", "").strip()
+        selected_year = request.args.get("year", "").strip()
+
+        try:
+            page = max(1, int(request.args.get("page", "1")))
+        except ValueError:
+            page = 1
+
+        try:
+            per_page = min(100, max(10, int(request.args.get("per_page", "50"))))
+        except ValueError:
+            per_page = 50
+
+        where = ["list_id = ?"]
+        params = [list_id]
+
+        if query:
+            where.append("(title LIKE ? OR imdb_id LIKE ?)")
+            params.extend([f"%{query}%", f"%{query}%"])
+
+        if selected_year.isdigit():
+            where.append("year = ?")
+            params.append(int(selected_year))
+
+        clause = " AND ".join(where)
+
+        total = connection.execute(
+            f"SELECT COUNT(*) FROM movies WHERE {clause}",
+            params,
+        ).fetchone()[0]
+
+        stored_count = connection.execute(
+            "SELECT COUNT(*) FROM movies WHERE list_id = ?",
+            (list_id,),
+        ).fetchone()[0]
+
+        pages = max(1, (total + per_page - 1) // per_page)
+        page = min(page, pages)
+
         movies = connection.execute(
-            """SELECT tmdb_id, imdb_id, title, year, letterboxd_path
-               FROM movies
+            f"""SELECT tmdb_id, imdb_id, title, year, letterboxd_path
+                FROM movies
+                WHERE {clause}
+                ORDER BY rowid
+                LIMIT ? OFFSET ?""",
+            params + [per_page, (page - 1) * per_page],
+        ).fetchall()
+
+        years = [
+            row[0]
+            for row in connection.execute(
+                "SELECT DISTINCT year FROM movies WHERE list_id = ? AND year IS NOT NULL ORDER BY year DESC",
+                (list_id,),
+            )
+        ]
+
+        history = connection.execute(
+            """SELECT started_at, completed_at, state, movie_count,
+                      added_count, removed_count, message
+               FROM update_history
                WHERE list_id = ?
-               ORDER BY rowid""",
+               ORDER BY id DESC
+               LIMIT 20""",
             (list_id,),
         ).fetchall()
 
@@ -863,6 +921,15 @@ def list_detail(list_id):
         "list.html",
         item=item,
         movies=movies,
+        history=history,
+        query=query,
+        selected_year=selected_year,
+        years=years,
+        page=page,
+        pages=pages,
+        total=total,
+        stored_count=stored_count,
+        per_page=per_page,
     )
 
 
