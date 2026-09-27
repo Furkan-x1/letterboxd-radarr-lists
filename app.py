@@ -1356,7 +1356,7 @@ def add_discovered_list():
     try:
         letterboxd_url = normalize_letterboxd_url(request.form["letterboxd_url"])
     except (KeyError, ValueError) as exc:
-        return redirect(url_for("discover_page", error=str(exc)))
+        return redirect(url_for("index", error=str(exc)))
 
     with db() as connection:
         existing = connection.execute(
