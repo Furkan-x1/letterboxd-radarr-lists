@@ -655,12 +655,23 @@ def refresh_list(list_id, force=False):
                         (scraped_name, list_id),
                     )
 
+            message = f"Updated successfully: {len(movies)} films."
+            finish_history(
+                history_id,
+                "completed",
+                len(movies),
+                added_count,
+                removed_count,
+                message,
+            )
             set_refresh_status(
                 list_id,
                 state="completed",
-                message=f"Updated successfully: {len(movies)} films.",
+                message=message,
                 current=len(movies),
                 total=len(movies),
+                added=added_count,
+                removed=removed_count,
             )
 
             log.info(
@@ -670,11 +681,13 @@ def refresh_list(list_id, force=False):
                 "watchlist" if watchlist else "persistent list",
             )
 
-        except RefreshCancelled as exc:
+        except RefreshCancelled:
+            message = "Update stopped by user."
+            finish_history(history_id, "paused", message=message)
             set_refresh_status(
                 list_id,
                 state="paused",
-                message="Update stopped by user.",
+                message=message,
             )
             log.info("Update stopped for %s.", row["letterboxd_url"])
         except Exception as exc:
@@ -684,6 +697,7 @@ def refresh_list(list_id, force=False):
                     (str(exc), list_id),
                 )
 
+            finish_history(history_id, "error", message=str(exc))
             set_refresh_status(
                 list_id,
                 state="error",
