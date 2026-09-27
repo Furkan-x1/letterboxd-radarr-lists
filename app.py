@@ -16,7 +16,7 @@ from flask import Flask, Response, jsonify, redirect, render_template, request, 
 
 DB_PATH = os.getenv("DB_PATH", "/data/app.db")
 PORT = int(os.getenv("PORT", "5000"))
-UPDATE_INTERVAL = int(os.getenv("UPDATE_INTERVAL_SECONDS", "21600"))
+UPDATE_INTERVAL = int(os.getenv("UPDATE_INTERVAL_SECONDS", "43200"))
 REQUEST_DELAY = float(os.getenv("LETTERBOXD_REQUEST_DELAY_SECONDS", "2"))
 REQUEST_TIMEOUT = int(os.getenv("LETTERBOXD_REQUEST_TIMEOUT_SECONDS", "20"))
 MAX_PAGES = int(os.getenv("MAX_PAGES_PER_LIST", "100"))
