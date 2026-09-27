@@ -1,218 +1,54 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Letterboxd Radarr Lists</title>
 <style>
-:root{color-scheme:dark;--bg:#111315;--panel:#191c20;--panel2:#20242a;--border:#30353d;--text:#f1f3f5;--muted:#9da5af;--accent:#00c030;--danger:#ef6b73}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-main{max-width:1050px;margin:0 auto;padding:42px 22px 60px}
-header{margin-bottom:30px}
-h1{margin:0 0 7px;font-size:30px;letter-spacing:-.02em}
-.subtitle{margin:0;color:var(--muted)}
-.add{display:flex;gap:10px;margin:0 0 28px}
-.global-controls{display:flex;align-items:center;gap:12px;margin:0 0 18px}
-.global-paused{color:#d6b86a}
-.add input{flex:1;min-width:0;background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:9px;padding:12px 14px;font:inherit;outline:none}
-.add input:focus{border-color:var(--accent)}
-button,.button{border:1px solid var(--border);background:var(--panel2);color:var(--text);border-radius:8px;padding:10px 14px;font:inherit;cursor:pointer;text-decoration:none;display:inline-block}
-button:hover,.button:hover{border-color:#59616c}
-.primary{background:var(--accent);border-color:var(--accent);color:#061006;font-weight:650}
-.danger{color:#ff9aa0}
-.error{color:var(--danger);background:#2a171a;border:1px solid #512328;border-radius:8px;padding:10px 12px}
-.cards{display:grid;gap:14px}
-.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px}
-.card-head{display:flex;justify-content:space-between;gap:20px;align-items:flex-start}
-.card h2{margin:0 0 4px;font-size:20px}
-.card h2 a{color:inherit;text-decoration:none}
-.card h2 a:hover{text-decoration:underline}
-.url{color:var(--muted);font-size:13px;word-break:break-all}
-.stats{display:flex;gap:18px;margin:16px 0;color:var(--muted);font-size:14px}
-.stats strong{color:var(--text)}
-.status{margin:12px 0;padding:10px 12px;border-radius:8px;background:var(--panel2);color:var(--muted)}
-.status.updating{color:var(--text)}
-.status.completed{color:var(--accent)}
-.status.error{color:var(--danger);background:#2a171a}
-.status.paused{color:#d6b86a;background:#292516}
-.progress{height:5px;background:#2c3138;border-radius:99px;overflow:hidden;margin-top:8px}
-.progress>span{display:block;height:100%;background:var(--accent);width:0;transition:width .2s}
-.endpoint{display:flex;gap:8px;align-items:center;margin:16px 0}
-.endpoint code{flex:1;min-width:0;background:#101215;border:1px solid var(--border);border-radius:7px;padding:9px 10px;color:#c9ced5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.actions{display:flex;gap:8px;flex-wrap:wrap}
-.empty{color:var(--muted);padding:35px 0;text-align:center}
-@media(max-width:650px){main{padding:28px 14px}.add{display:block}.add button{margin-top:8px;width:100%}.card-head{display:block}.stats{flex-wrap:wrap;gap:10px 18px}}
+:root{color-scheme:dark;--bg:#111315;--panel:#191c20;--panel2:#20242a;--border:#30353d;--text:#f1f3f5;--muted:#9da5af;--accent:#00c030;--danger:#ef6b73;--warn:#d6b86a}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+main{max-width:1100px;margin:0 auto;padding:38px 22px 60px}header{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;margin-bottom:26px}h1{margin:0 0 6px;font-size:30px;letter-spacing:-.02em}.subtitle{margin:0;color:var(--muted)}
+a{color:var(--accent)}button,.button{border:1px solid var(--border);background:var(--panel2);color:var(--text);border-radius:8px;padding:9px 13px;font:inherit;cursor:pointer;text-decoration:none;display:inline-block}.button:hover,button:hover{border-color:#59616c}.primary{background:var(--accent);border-color:var(--accent);color:#061006;font-weight:650}.danger{color:#ff9aa0}.error{color:var(--danger);background:#2a171a;border:1px solid #512328;border-radius:8px;padding:10px 12px;margin-bottom:18px}
+.dashboard{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px}.metric{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:13px 15px}.metric strong{display:block;font-size:22px}.metric span{color:var(--muted);font-size:13px}
+.global-controls{display:flex;align-items:center;gap:12px;margin-bottom:18px}.global-paused{color:var(--warn)}.add{display:flex;gap:10px;margin-bottom:26px}.add input{flex:1;min-width:0;background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:9px;padding:12px 14px;font:inherit;outline:none}.add input:focus{border-color:var(--accent)}
+.cards{display:grid;gap:14px}.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px}.card-head{display:flex;justify-content:space-between;gap:20px;align-items:flex-start}.card h2{margin:0 0 4px;font-size:20px}.card h2 a{color:inherit;text-decoration:none}.card h2 a:hover{text-decoration:underline}.url{color:var(--muted);font-size:13px;word-break:break-all}.stats{display:flex;gap:18px;margin:14px 0;color:var(--muted);font-size:14px;flex-wrap:wrap}.stats strong{color:var(--text)}.change{color:var(--accent)}.removed{color:var(--danger)}
+.status{margin:10px 0;padding:10px 12px;border-radius:8px;background:var(--panel2);color:var(--muted)}.status.updating{color:var(--text)}.status.completed{color:var(--accent)}.status.error{color:var(--danger);background:#2a171a}.status.paused{color:var(--warn);background:#292516}.progress{height:5px;background:#2c3138;border-radius:99px;overflow:hidden;margin-top:8px}.progress>span{display:block;height:100%;background:var(--accent);width:0;transition:width .2s}.next{margin:8px 0;color:var(--muted);font-size:13px}
+.endpoint{display:flex;gap:8px;align-items:center;margin:15px 0}.endpoint code{flex:1;min-width:0;background:#101215;border:1px solid var(--border);border-radius:7px;padding:9px 10px;color:#c9ced5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.inline-form{display:flex;gap:7px;align-items:center}.select{background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:9px 10px;font:inherit}.empty{color:var(--muted);padding:35px 0;text-align:center}.top-link{color:var(--muted);text-decoration:none;font-size:13px}.top-link:hover{color:var(--text)}
+@media(max-width:750px){main{padding:28px 14px}.dashboard{grid-template-columns:repeat(2,1fr)}header{display:block}.top-link{display:inline-block;margin-top:12px}.add{display:block}.add button{margin-top:8px;width:100%}.card-head{display:block}.actions .inline-form{width:100%}.actions .inline-form .select{flex:1}}
 </style>
 </head>
-<body>
-<main>
-<header>
-<h1>Letterboxd Radarr Lists</h1>
-<p class="subtitle">Keep public Letterboxd lists synchronized with Radarr.</p>
-</header>
-
+<body><main>
+<header><div><h1>Letterboxd Radarr Lists</h1><p class="subtitle">Keep public Letterboxd lists synchronized with Radarr.</p></div><a class="top-link" href="{{ url_for('status_page') }}">System status</a></header>
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
-
-<div class="global-controls">
-{% if global_pause_until %}
-<form method="post" action="{{ url_for('resume_refresh') }}"><button type="submit">Resume automatic updates</button></form>
-<div class="global-paused" data-global-pause="{{ global_pause_until }}">Automatic updates paused</div>
-{% else %}
-<form method="post" action="{{ url_for('pause_refresh') }}"><button type="submit">Pause automatic updates for 12 hours</button></form>
-{% endif %}
+<div class="dashboard">
+<div class="metric"><strong>{{ lists|length }}</strong><span>Lists</span></div>
+<div class="metric"><strong>{{ lists|sum(attribute='movie_count') }}</strong><span>Stored movies</span></div>
+<div class="metric"><strong>{{ active_count }}</strong><span>Updating now</span></div>
+<div class="metric"><strong>{{ due_count }}</strong><span>Updates due</span></div>
 </div>
-
-<form class="add" method="post" action="{{ url_for('create_list') }}">
-<input name="letterboxd_url" type="text" placeholder="username/watchlist or username/list/example" required>
-<button class="primary" type="submit">Add list</button>
-</form>
-
-{% if not lists %}
-<p class="empty">No lists configured.</p>
-{% endif %}
-
+<div class="global-controls">
+{% if global_pause_until %}<form method="post" action="{{ url_for('resume_refresh') }}"><button type="submit">Resume automatic updates</button></form><div class="global-paused">Automatic updates paused for 12 hours</div>
+{% else %}<form method="post" action="{{ url_for('pause_refresh') }}"><button type="submit">Pause automatic updates for 12 hours</button></form>{% endif %}
+</div>
+<form class="add" method="post" action="{{ url_for('create_list') }}"><input name="letterboxd_url" type="text" placeholder="username/watchlist or username/list/example" required><button class="primary" type="submit">Add list</button></form>
+{% if not lists %}<p class="empty">No lists configured.</p>{% endif %}
 <div class="cards">
 {% for item in lists %}
 <section class="card" data-list-id="{{ item['id'] }}">
-<div class="card-head">
-<div>
-<h2><a href="{{ url_for('list_detail', list_id=item['id']) }}">{{ item["name"] }}</a></h2>
-<div class="url">{{ item["letterboxd_url"] }}</div>
-</div>
-</div>
-
-<div class="stats">
-<span><strong>{{ item["movie_count"] }}</strong> stored movies</span>
-{% if item["updated_at"] %}<span>Last updated <span class="updated-time" data-updated="{{ item["updated_at"] }}">{{ item["updated_at"] }}</span></span>{% endif %}
-</div>
-
-<div class="status" data-status>Checking status...</div>
-<div class="url" data-next-update></div>
-<div class="progress" data-progress hidden><span></span></div>
-
-<div class="endpoint">
-<code id="endpoint-{{ item['id'] }}">{{ url_for('radarr_list', list_id=item['id'], _external=True) }}</code>
-<button type="button" onclick="copyEndpoint('{{ item['id'] }}')">Copy URL</button>
-</div>
-
+<div class="card-head"><div><h2><a href="{{ url_for('list_detail', list_id=item['id']) }}">{{ item["name"] }}</a></h2><div class="url">{{ item["letterboxd_url"] }}</div></div></div>
+<div class="stats"><span><strong>{{ item["movie_count"] }}</strong> stored movies</span>{% if item["updated_at"] %}<span>Last updated <span class="updated-time" data-updated="{{ item["updated_at"] }}">{{ item["updated_at"] }}</span></span>{% endif %}{% if item["last_added"] %}<span class="change">+{{ item["last_added"] }} new</span>{% endif %}{% if item["last_removed"] %}<span class="removed">−{{ item["last_removed"] }} removed</span>{% endif %}</div>
+<div class="status" data-status>Checking status...</div><div class="next" data-next-update></div><div class="progress" data-progress hidden><span></span></div>
+<div class="endpoint"><code id="endpoint-{{ item['id'] }}">{{ url_for('radarr_list', list_id=item['id'], _external=True) }}</code><button type="button" onclick="copyEndpoint('{{ item['id'] }}')">Copy URL</button></div>
 {% if item["last_error"] %}<div class="status error">Last error: {{ item["last_error"] }}</div>{% endif %}
-
-<div class="actions">
-<a class="button" href="{{ url_for('list_detail', list_id=item['id']) }}">View movies</a>
-<form method="post" action="{{ url_for('manual_refresh', list_id=item['id']) }}">
-<button type="submit">Refresh now</button>
-</form>
-<form method="post" action="{{ url_for('toggle_list', list_id=item['id']) }}">
-<button type="submit">{{ "Pause updates" if item["enabled"] else "Resume updates" }}</button>
-</form>
-<form method="post" action="{{ url_for('delete_list', list_id=item['id']) }}" onsubmit="return confirm('Delete this list and its stored movie data?');">
-<button class="danger" type="submit">Delete</button>
-</form>
-</div>
+<div class="actions"><a class="button" href="{{ url_for('list_detail', list_id=item['id']) }}">View movies</a><form class="inline-form" method="post" action="{{ url_for('manual_refresh', list_id=item['id']) }}"><button type="submit">Refresh now</button></form><form class="inline-form" method="post" action="{{ url_for('set_interval', list_id=item['id']) }}"><select class="select" name="update_interval_seconds" onchange="this.form.submit()" aria-label="Update interval"><option value="21600" {% if item['update_interval_seconds']==21600 %}selected{% endif %}>Every 6 hours</option><option value="43200" {% if item['update_interval_seconds']==43200 %}selected{% endif %}>Every 12 hours</option><option value="86400" {% if item['update_interval_seconds']==86400 %}selected{% endif %}>Every 24 hours</option></select></form><form class="inline-form" method="post" action="{{ url_for('toggle_list', list_id=item['id']) }}"><button type="submit">{{ "Pause updates" if item["enabled"] else "Resume updates" }}</button></form><form class="inline-form" method="post" action="{{ url_for('delete_list', list_id=item['id']) }}" onsubmit="return confirm('Delete this list and its stored movie data?');"><button class="danger" type="submit">Delete</button></form></div>
 </section>
-{% endfor %}
-</div>
-</main>
-
+{% endfor %}</div></main>
 <script>
-const DISPLAY_TIME_ZONE = "__TIME_ZONE__";
-
-function formatLastUpdated(value) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone: DISPLAY_TIME_ZONE,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false
-  }).format(date).replace(",", "");
-}
-
-function formatRemaining(milliseconds) {
-  const totalMinutes = Math.max(0, Math.floor(milliseconds / 60000));
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  return `${minutes}m`;
-}
-
-function updateLastUpdatedTimes() {
-  document.querySelectorAll(".updated-time").forEach(element => {
-    element.textContent = formatLastUpdated(element.dataset.updated);
-  });
-}
-
-async function updateStatuses() {
-  const cards = document.querySelectorAll("[data-list-id]");
-  await Promise.all([...cards].map(async card => {
-    const id = card.dataset.listId;
-    const status = card.querySelector("[data-status]");
-    const progress = card.querySelector("[data-progress]");
-    const bar = progress.querySelector("span");
-
-    try {
-      const response = await fetch("/lists/" + id + "/status", {cache:"no-store"});
-      if (!response.ok) return;
-      const data = await response.json();
-
-      status.className = "status " + data.state;
-      status.textContent = data.message || data.state;
-      updateNextUpdate(card, data.updated_at);
-
-      if (data.state === "updating" && data.total > 0) {
-        progress.hidden = false;
-        bar.style.width = Math.min(100, (data.current / data.total) * 100) + "%";
-      } else {
-        progress.hidden = true;
-      }
-    } catch (_) {}
-  }));
-}
-
-async function copyEndpoint(id) {
-  const value = document.getElementById("endpoint-" + id).textContent;
-  await navigator.clipboard.writeText(value);
-  const button = document.querySelector("[data-list-id=\"" + id + "\"] .endpoint button");
-  const old = button.textContent;
-  button.textContent = "Copied";
-  setTimeout(() => button.textContent = old, 1200);
-}
-
-function updateNextUpdate(card, updatedAt) {
-  const target = card.querySelector("[data-next-update]");
-  if (!target || !updatedAt) {
-    if (target) target.textContent = "";
-    return;
-  }
-
-  const next = new Date(updatedAt).getTime() + {{ update_interval_ms }};
-  const remaining = next - Date.now();
-
-  if (remaining <= 0) {
-    target.textContent = "Automatic update is due.";
-    return;
-  }
-
-  target.textContent = "Next automatic update in " + formatRemaining(remaining);
-}
-
-updateLastUpdatedTimes();
-updateStatuses();
-setInterval(updateStatuses, 1500);
-setInterval(() => {
-  updateLastUpdatedTimes();
-  document.querySelectorAll("[data-list-id]").forEach(card => {
-    const value = card.querySelector(".updated-time");
-    if (value) updateNextUpdate(card, value.dataset.updated);
-  });
-}, 1000);
-</script>
-</body>
-</html>
+const DISPLAY_TIME_ZONE = {{ time_zone|tojson }};
+function formatLastUpdated(value){const date=new Date(value);if(Number.isNaN(date.getTime()))return value;try{return new Intl.DateTimeFormat("en-GB",{timeZone:DISPLAY_TIME_ZONE,year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(date).replace(",","")}catch(_){return date.toLocaleString("en-GB")}}
+function formatRemaining(ms){const total=Math.max(0,Math.floor(ms/60000)),h=Math.floor(total/60),m=total%60;return h>0?h+"h "+m+"m":m+"m"}
+function updateLastUpdatedTimes(){document.querySelectorAll(".updated-time").forEach(e=>e.textContent=formatLastUpdated(e.dataset.updated))}
+function updateNextUpdate(card,data){const target=card.querySelector("[data-next-update]");if(!target)return;card.dataset.nextUpdate=data.next_update_at||"";if(data.next_update_at){const remaining=new Date(data.next_update_at).getTime()-Date.now();target.textContent=remaining<=0?"Automatic update is due.":"Next automatic update in "+formatRemaining(remaining)}else target.textContent=""}
+async function updateStatuses(){const cards=document.querySelectorAll("[data-list-id]");await Promise.all([...cards].map(async card=>{const id=card.dataset.listId,status=card.querySelector("[data-status]"),progress=card.querySelector("[data-progress]"),bar=progress.querySelector("span");try{const response=await fetch("/lists/"+id+"/status",{cache:"no-store"});if(!response.ok)return;const data=await response.json();status.className="status "+data.state;status.textContent=data.message||data.state;updateNextUpdate(card,data);if(data.state==="updating"&&data.total>0){progress.hidden=false;bar.style.width=Math.min(100,(data.current/data.total)*100)+"%"}else progress.hidden=true}catch(_){}}))}
+async function copyEndpoint(id){const value=document.getElementById("endpoint-"+id).textContent;await navigator.clipboard.writeText(value);const button=document.querySelector("[data-list-id=\""+id+"\"] .endpoint button");const old=button.textContent;button.textContent="Copied";setTimeout(()=>button.textContent=old,1200)}
+updateLastUpdatedTimes();updateStatuses();setInterval(updateStatuses,1500);setInterval(()=>{updateLastUpdatedTimes();document.querySelectorAll("[data-list-id]").forEach(card=>{const next=card.querySelector("[data-next-update]"),value=card.dataset.nextUpdate;if(next&&value){const remaining=new Date(value).getTime()-Date.now();next.textContent=remaining<=0?"Automatic update is due.":"Next automatic update in "+formatRemaining(remaining)}})},1000);
+</script></body></html>
