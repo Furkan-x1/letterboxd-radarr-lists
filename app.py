@@ -937,7 +937,16 @@ def list_detail(list_id):
 def list_status(list_id):
     with db() as connection:
         row = connection.execute(
-            "SELECT updated_at, last_error, enabled FROM lists WHERE id = ?",
+            """SELECT updated_at, last_error, enabled, update_interval_seconds
+               FROM lists WHERE id = ?""",
+            (list_id,),
+        ).fetchone()
+
+        latest = connection.execute(
+            """SELECT added_count, removed_count
+               FROM update_history
+               WHERE list_id = ?
+               ORDER BY id DESC LIMIT 1""",
             (list_id,),
         ).fetchone()
 
@@ -951,35 +960,46 @@ def list_status(list_id):
         return jsonify(active)
 
     if not row["enabled"]:
-        return jsonify(
-            {
-                "state": "paused",
-                "message": "Automatic updates paused",
-                "updated_at": row["updated_at"],
-                "current": 0,
-                "total": 0,
-            }
-        )
-
-    if row["last_error"]:
-        return jsonify(
-            {
-                "state": "error",
-                "message": row["last_error"],
-                "current": 0,
-                "total": 0,
-            }
-        )
-
-    return jsonify(
-        {
-            "state": "idle",
-            "message": "Up to date" if row["updated_at"] else "Not updated yet",
+        return jsonify({
+            "state": "paused",
+            "message": "Automatic updates paused",
             "updated_at": row["updated_at"],
+            "next_update_at": None,
             "current": 0,
             "total": 0,
-        }
+        })
+
+    next_at = next_update_timestamp(
+        row["updated_at"],
+        row["update_interval_seconds"],
     )
+
+    if row["last_error"]:
+        return jsonify({
+            "state": "error",
+            "message": row["last_error"],
+            "updated_at": row["updated_at"],
+            "next_update_at": datetime.fromtimestamp(
+                next_at,
+                timezone.utc,
+            ).isoformat(),
+            "current": 0,
+            "total": 0,
+        })
+
+    return jsonify({
+        "state": "idle",
+        "message": "Up to date" if row["updated_at"] else "Not updated yet",
+        "updated_at": row["updated_at"],
+        "next_update_at": datetime.fromtimestamp(
+            next_at,
+            timezone.utc,
+        ).isoformat(),
+        "current": 0,
+        "total": 0,
+        "added": latest["added_count"] if latest else 0,
+        "removed": latest["removed_count"] if latest else 0,
+    })
 
 
 @app.post("/lists")
