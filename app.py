@@ -994,7 +994,12 @@ def index():
                (SELECT added_count FROM update_history h
                 WHERE h.list_id = l.id ORDER BY h.id DESC LIMIT 1) AS last_added,
                (SELECT removed_count FROM update_history h
-                WHERE h.list_id = l.id ORDER BY h.id DESC LIMIT 1) AS last_removed
+                WHERE h.list_id = l.id ORDER BY h.id DESC LIMIT 1) AS last_removed,
+               (SELECT COUNT(*) FROM unmatched_movies u
+                WHERE u.history_id = (
+                    SELECT h.id FROM update_history h
+                    WHERE h.list_id = l.id ORDER BY h.id DESC LIMIT 1
+                )) AS last_unmatched
                FROM lists l
                LEFT JOIN movies m ON m.list_id = l.id
                GROUP BY l.id
