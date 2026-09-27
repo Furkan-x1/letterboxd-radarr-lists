@@ -139,6 +139,19 @@ def init_db():
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_update_changes_history_id ON update_changes(history_id)"
         )
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS unmatched_movies (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                history_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                letterboxd_path TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                FOREIGN KEY (history_id) REFERENCES update_history(id) ON DELETE CASCADE
+            )"""
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_unmatched_movies_history_id ON unmatched_movies(history_id)"
+        )
 
 
 def now():
@@ -242,6 +255,28 @@ def record_changes(history_id, added_movies, removed_movies):
             )
             VALUES (?, ?, ?, ?, ?, ?)""",
             changes,
+        )
+
+
+def record_unmatched(history_id, unmatched_movies):
+    if not unmatched_movies:
+        return
+
+    with db() as connection:
+        connection.executemany(
+            """INSERT INTO unmatched_movies(
+                history_id, title, letterboxd_path, reason
+            )
+            VALUES (?, ?, ?, ?)""",
+            [
+                (
+                    history_id,
+                    movie["title"],
+                    movie["letterboxd_path"],
+                    movie["reason"],
+                )
+                for movie in unmatched_movies
+            ],
         )
 
 
@@ -558,6 +593,7 @@ def scrape_list(list_id, list_url):
         base = list_url.rstrip("/")
         list_name = None
         saw_film_paths = False
+        unmatched_movies = []
 
         for page in range(1, MAX_PAGES + 1):
             page_url = f"{base}/" if page == 1 else f"{base}/page/{page}/"
@@ -620,7 +656,12 @@ def scrape_list(list_id, list_url):
                 try:
                     movies[path] = parse_film(path)
                 except Exception as exc:
-                    log.warning("Skipping %s: %s", path, exc)
+                    unmatched_movies.append({
+                        "title": path,
+                        "letterboxd_path": path,
+                        "reason": str(exc),
+                    })
+                    log.warning("Could not match %s: %s", path, exc)
 
             if len(movies) == before or len(film_paths) < 20:
                 break
@@ -631,7 +672,7 @@ def scrape_list(list_id, list_url):
             len(movies),
             sum(1 for _ in movies),
         )
-        return list(movies.values()), list_name, saw_film_paths
+        return list(movies.values()), list_name, saw_film_paths, unmatched_movies
 
 
 def store_movies(list_id, movies, watchlist):
@@ -706,7 +747,7 @@ def refresh_list(list_id, force=False):
 
             old_movies = load_cached_movies(list_id)
             old_paths = set(old_movies)
-            movies, scraped_name, saw_film_paths = scrape_list(
+            movies, scraped_name, saw_film_paths, unmatched_movies = scrape_list(
                 list_id,
                 row["letterboxd_url"],
             )
@@ -752,6 +793,7 @@ def refresh_list(list_id, force=False):
 
             message = f"Updated successfully: {len(movies)} films."
             record_changes(history_id, added_movies, removed_movies)
+            record_unmatched(history_id, unmatched_movies)
             finish_history(
                 history_id,
                 "completed",
@@ -1065,6 +1107,21 @@ def list_detail(list_id):
         ).fetchall()
 
         history_ids = [entry["id"] for entry in history]
+        unmatched_by_history = {history_id: [] for history_id in history_ids}
+        if history_ids:
+            placeholders = ",".join("?" for _ in history_ids)
+            unmatched = connection.execute(
+                f"""SELECT history_id, title, letterboxd_path, reason
+                    FROM unmatched_movies
+                    WHERE history_id IN ({placeholders})
+                    ORDER BY id DESC
+                    LIMIT 2000""",
+                history_ids,
+            ).fetchall()
+
+            for movie in unmatched:
+                unmatched_by_history[movie["history_id"]].append(movie)
+
         changes_by_history = {history_id: [] for history_id in history_ids}
         if history_ids:
             placeholders = ",".join("?" for _ in history_ids)
@@ -1086,6 +1143,7 @@ def list_detail(list_id):
         movies=movies,
         history=history,
         changes_by_history=changes_by_history,
+        unmatched_by_history=unmatched_by_history,
         query=query,
         selected_year=selected_year,
         years=years,
@@ -1286,6 +1344,13 @@ def delete_list(list_id):
     with db() as connection:
         connection.execute(
             """DELETE FROM update_changes
+               WHERE history_id IN (
+                   SELECT id FROM update_history WHERE list_id = ?
+               )""",
+            (list_id,),
+        )
+        connection.execute(
+            """DELETE FROM unmatched_movies
                WHERE history_id IN (
                    SELECT id FROM update_history WHERE list_id = ?
                )""",
