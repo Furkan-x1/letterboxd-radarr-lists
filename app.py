@@ -387,6 +387,12 @@ def discover_profile_lists(profile_url):
         if found_on_page == 0:
             break
 
+    # A later pagination request may be denied even after Letterboxd
+    # successfully returned public lists. Keep already discovered lists and
+    # only show a warning when nothing except the watchlist was found.
+    if len(result) > 1:
+        warning = None
+
     return result, warning
 
 
