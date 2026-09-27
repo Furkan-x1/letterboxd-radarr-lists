@@ -554,6 +554,10 @@ def scrape_list(list_id, list_url):
 
 
 def store_movies(list_id, movies, watchlist):
+    pass
+
+
+def store_movies_original(list_id, movies, watchlist):
     with db() as connection:
         if watchlist:
             connection.execute(
