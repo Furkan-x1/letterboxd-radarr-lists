@@ -725,35 +725,39 @@ def start_refresh(list_id, force=False):
 def updater_loop():
     while True:
         try:
-            with db() as connection:
-                ids = [
-                    row["id"]
-                    for row in connection.execute(
-                        "SELECT id FROM lists WHERE enabled = 1"
-                    )
-                ]
+            if get_global_pause_until() <= time.time():
+                with db() as connection:
+                    rows = connection.execute(
+                        "SELECT id, updated_at, update_interval_seconds FROM lists WHERE enabled = 1"
+                    ).fetchall()
 
-            for list_id in ids:
-                refresh_list(list_id)
+                for row in rows:
+                    if next_update_timestamp(
+                        row["updated_at"],
+                        row["update_interval_seconds"],
+                    ) <= time.time():
+                        refresh_list(row["id"])
 
         except Exception:
             log.exception("Background update failed")
 
-        time.sleep(UPDATE_INTERVAL)
+        time.sleep(UPDATER_POLL_SECONDS)
+
+
 
 
 @app.post("/pause-refresh")
 def pause_refresh():
-    global global_pause_until, refresh_cancel_requested
-    global_pause_until = time.time() + UPDATE_INTERVAL
+    global refresh_cancel_requested
+    set_setting("global_pause_until", time.time() + 12 * 60 * 60)
     refresh_cancel_requested = True
     return redirect(url_for("index"))
 
 
 @app.post("/resume-refresh")
 def resume_refresh():
-    global global_pause_until, refresh_cancel_requested
-    global_pause_until = 0.0
+    global refresh_cancel_requested
+    set_setting("global_pause_until", 0)
     refresh_cancel_requested = False
     return redirect(url_for("index"))
 
@@ -762,7 +766,7 @@ def resume_refresh():
 def refresh_status():
     with refresh_lock:
         active_count = len(active_refreshes)
-        pause_until = global_pause_until
+    pause_until = get_global_pause_until()
 
     return jsonify({
         "paused": pause_until > time.time(),
