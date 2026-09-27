@@ -1098,7 +1098,7 @@ def create_list():
             (list_id, letterboxd_url, name, now(), UPDATE_INTERVAL),
         )
 
-    start_refresh(list_id)
+    start_refresh(list_id, force=True)
     return redirect(url_for("index"))
 
 
