@@ -25,7 +25,7 @@ h1{margin-bottom:6px}.subtitle{color:var(--muted);margin-top:0}.form{display:fle
 <h2>{{ lists|length }} lists found</h2>
 {% for item in lists %}
 <div class="list">
-<div><div class="name">{{ item["name"] }}</div><div class="url">{{ item["url"] }}</div></div>
+<div><div class="name">{{ item["name"] }}{% if item.get("is_watchlist") %} <span style="color:var(--muted);font-size:12px;font-weight:400">Watchlist</span>{% endif %}</div><div class="url">{{ item["url"] }}</div></div>
 <form class="add" method="post" action="{{ url_for('add_discovered_list') }}">
 <input type="hidden" name="letterboxd_url" value="{{ item["url"] }}">
 <button type="submit">Add</button>
