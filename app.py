@@ -21,6 +21,8 @@ REQUEST_DELAY = float(os.getenv("LETTERBOXD_REQUEST_DELAY_SECONDS", "2"))
 REQUEST_TIMEOUT = int(os.getenv("LETTERBOXD_REQUEST_TIMEOUT_SECONDS", "20"))
 MAX_PAGES = int(os.getenv("MAX_PAGES_PER_LIST", "100"))
 MAX_MOVIES = int(os.getenv("MAX_MOVIES_PER_LIST", "5000"))
+UPDATER_POLL_SECONDS = int(os.getenv("UPDATER_POLL_SECONDS", "60"))
+RETRY_ATTEMPTS = int(os.getenv("LETTERBOXD_RETRY_ATTEMPTS", "3"))
 USER_AGENT = os.getenv(
     "USER_AGENT",
     "LetterboxdRadarrLists/0.1",
