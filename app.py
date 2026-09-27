@@ -1021,33 +1021,14 @@ def refresh_status():
 
 
 
-@app.get("/discover")
-def discover_page():
-    return render_template(
-        "discover.html",
-        profile_url="",
-        lists=[],
-        error=request.args.get("error"),    )
-
-
 @app.post("/discover")
 def discover_profile():
     try:
         profile_url = normalize_profile_url(request.form.get("profile_url", ""))
         lists, warning = discover_profile_lists(profile_url)
-        return render_template(
-            "discover.html",
-            profile_url=profile_url,
-            lists=lists,
-            error=warning,
-        )
+        return render_template("index.html", **dashboard_data(), error=None, duplicate_id=None, message=None, discovery_lists=lists, discovery_profile=profile_url, discovery_error=warning)
     except Exception as exc:
-        return render_template(
-            "discover.html",
-            profile_url=request.form.get("profile_url", ""),
-            lists=[],
-            error=str(exc),
-        ), 400
+        return render_template("index.html", **dashboard_data(), error=None, duplicate_id=None, message=None, discovery_lists=[], discovery_profile=request.form.get("profile_url", ""), discovery_error=str(exc)), 400
 
 
 @app.get("/status")
@@ -1099,8 +1080,7 @@ def health():
     }
 
 
-@app.get("/")
-def index():
+def dashboard_data():
     with db() as connection:
         lists = connection.execute(
             """SELECT l.*, COUNT(m.tmdb_id) AS movie_count,
@@ -1110,7 +1090,8 @@ def index():
                 WHERE h.list_id = l.id ORDER BY h.id DESC LIMIT 1) AS last_removed,
                (SELECT COUNT(*) FROM unmatched_movies u
                 WHERE u.history_id = (
-                    SELECT h.id FROM update_history h                    WHERE h.list_id = l.id ORDER BY h.id DESC LIMIT 1
+                    SELECT h.id FROM update_history h
+                    WHERE h.list_id = l.id ORDER BY h.id DESC LIMIT 1
                 )) AS last_unmatched
                FROM lists l
                LEFT JOIN movies m ON m.list_id = l.id
@@ -1119,31 +1100,26 @@ def index():
         ).fetchall()
 
     pause_until = get_global_pause_until()
-
     with refresh_lock:
         active_count = len(active_refreshes)
-
     due_count = sum(
-        1
-        for item in lists
-        if item["enabled"]
-        and next_update_timestamp(
-            item["updated_at"],
-            item["update_interval_seconds"],
-        ) <= time.time()
+        1 for item in lists
+        if item["enabled"] and next_update_timestamp(item["updated_at"], item["update_interval_seconds"]) <= time.time()
     )
+    return {"lists": lists, "global_pause_until": pause_until, "active_count": active_count, "due_count": due_count, "time_zone": os.getenv("TZ", "UTC")}
 
+
+@app.get("/")
+def index():
     return render_template(
         "index.html",
-        lists=lists,
+        **dashboard_data(),
         error=request.args.get("error"),
         duplicate_id=request.args.get("duplicate_id"),
         message=request.args.get("message"),
-        update_interval_ms=UPDATE_INTERVAL * 1000,
-        global_pause_until=pause_until,
-        active_count=active_count,
-        due_count=due_count,
-        time_zone=os.getenv("TZ", "UTC"),
+        discovery_lists=[],
+        discovery_profile="",
+        discovery_error=None,
     )
 
 
@@ -1343,22 +1319,17 @@ def list_status(list_id):
 
 @app.post("/lists")
 def create_list():
+    raw_value = request.form.get("letterboxd_url", "").strip()
     try:
-        letterboxd_url = normalize_letterboxd_url(
-            request.form["letterboxd_url"]
-        )
-    except (KeyError, ValueError) as exc:
-        return render_template(
-            "index.html",
-            error=str(exc),
-            lists=[],
-            update_interval_ms=UPDATE_INTERVAL * 1000,
-            global_pause_until=get_global_pause_until(),
-            active_count=0,
-            due_count=0,
-            time_zone=os.getenv("TZ", "UTC"),
-            duplicate_id=None,
-        ), 400
+        letterboxd_url = normalize_letterboxd_url(raw_value)
+    except ValueError:
+        try:
+            profile_url = normalize_profile_url(raw_value)
+            lists, warning = discover_profile_lists(profile_url)
+            return render_template("index.html", **dashboard_data(), error=None, duplicate_id=None, message=None, discovery_lists=lists, discovery_profile=profile_url, discovery_error=warning)
+        except (KeyError, ValueError, RuntimeError) as exc:
+            return render_template("index.html", **dashboard_data(), error=str(exc), duplicate_id=None, message=None, discovery_lists=[], discovery_profile="", discovery_error=None), 400
+
     with db() as connection:
         existing = connection.execute(
             "SELECT id FROM lists WHERE letterboxd_url = ?",
@@ -1366,29 +1337,18 @@ def create_list():
         ).fetchone()
 
     if existing:
-        return redirect(
-            url_for(
-                "index",
-                error="This Letterboxd list is already added.",
-                duplicate_id=existing["id"],
-            )
-        )
+        return redirect(url_for("index", error="This Letterboxd list is already added.", duplicate_id=existing["id"]))
 
     list_id = uuid.uuid4().hex[:12]
     name = letterboxd_url.rstrip("/").split("/")[-1]
-
     with db() as connection:
         connection.execute(
-            """INSERT INTO lists(
-                id, letterboxd_url, name, created_at, update_interval_seconds
-            )
+            """INSERT INTO lists(id, letterboxd_url, name, created_at, update_interval_seconds)
             VALUES (?, ?, ?, ?, ?)""",
             (list_id, letterboxd_url, name, now(), UPDATE_INTERVAL),
         )
-
     start_refresh(list_id, force=True)
     return redirect(url_for("index"))
-
 
 
 @app.post("/lists/add-discovered")
