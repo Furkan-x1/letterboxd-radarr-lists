@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Discover Letterboxd lists</title>
+<style>
+:root{color-scheme:dark;--bg:#111315;--panel:#191c20;--panel2:#20242a;--border:#30353d;--text:#f1f3f5;--muted:#9da5af;--accent:#00c030;--danger:#ef6b73}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+main{max-width:900px;margin:0 auto;padding:38px 22px 60px}a{color:var(--accent)}.back{color:var(--muted);text-decoration:none}
+h1{margin-bottom:6px}.subtitle{color:var(--muted);margin-top:0}.form{display:flex;gap:10px;margin:22px 0}.form input{flex:1;min-width:0;background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:9px;padding:12px 14px;font:inherit}.form button,.add button{border:1px solid var(--accent);background:var(--accent);color:#061006;font-weight:650;border-radius:8px;padding:9px 13px;font:inherit;cursor:pointer}
+.error{color:var(--danger);background:#2a171a;border:1px solid #512328;border-radius:8px;padding:10px 12px}.list{display:flex;align-items:center;justify-content:space-between;gap:18px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin:9px 0}.name{font-weight:650}.url{color:var(--muted);font-size:13px;word-break:break-all}.add{margin:0}.add button{background:var(--panel2);border-color:var(--border);color:var(--text);font-weight:400}.empty{color:var(--muted)}
+@media(max-width:650px){main{padding:28px 14px}.form{display:block}.form button{width:100%;margin-top:8px}.list{display:block}.add{margin-top:10px}.add button{width:100%}}
+</style>
+</head>
+<body><main>
+<a class="back" href="{{ url_for('index') }}">← Back to lists</a>
+<h1>Discover Letterboxd lists</h1>
+<p class="subtitle">Enter a public Letterboxd username or profile URL to find its public lists.</p>
+<form class="form" method="post" action="{{ url_for('discover_profile') }}">
+<input name="profile_url" value="{{ profile_url }}" placeholder="username or https://letterboxd.com/username/" required>
+<button type="submit">Find lists</button>
+</form>
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% if lists %}
+<h2>{{ lists|length }} lists found</h2>
+{% for item in lists %}
+<div class="list">
+<div><div class="name">{{ item["name"] }}</div><div class="url">{{ item["url"] }}</div></div>
+<form class="add" method="post" action="{{ url_for('add_discovered_list') }}">
+<input type="hidden" name="letterboxd_url" value="{{ item["url"] }}">
+<button type="submit">Add</button>
+</form>
+</div>
+{% endfor %}
+{% elif not error %}
+<p class="empty">Enter a profile above to find public lists.</p>
+{% endif %}
+</main></body></html>
