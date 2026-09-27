@@ -141,6 +141,33 @@ def next_update_timestamp(updated_at, interval_seconds):
     return parsed.timestamp() + interval_seconds
 
 
+def get_setting(key, default=None):
+    with db() as connection:
+        row = connection.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else default
+
+
+def set_setting(key, value):
+    with db() as connection:
+        connection.execute(
+            """INSERT INTO settings(key, value) VALUES (?, ?)
+               ON CONFLICT(key) DO UPDATE SET value = excluded.value""",
+            (key, str(value)),
+        )
+
+
+def get_global_pause_until():
+    try:
+        value = float(get_setting("global_pause_until", "0"))
+    except (TypeError, ValueError):
+        value = 0.0
+    if value <= time.time():
+        if value:
+            set_setting("global_pause_until", "0")
+        return 0.0
+    return value
+
+
 def normalize_letterboxd_url(value):
     value = value.strip()
 
