@@ -125,6 +125,22 @@ def now():
     return datetime.now(timezone.utc).isoformat()
 
 
+def parse_iso(value):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def next_update_timestamp(updated_at, interval_seconds):
+    parsed = parse_iso(updated_at)
+    if not parsed:
+        return time.time()
+    return parsed.timestamp() + interval_seconds
+
+
 def normalize_letterboxd_url(value):
     value = value.strip()
 
