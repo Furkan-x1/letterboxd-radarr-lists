@@ -94,6 +94,31 @@ def init_db():
             connection.execute(
                 "ALTER TABLE lists ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1"
             )
+        if "update_interval_seconds" not in list_columns:
+            connection.execute(
+                f"ALTER TABLE lists ADD COLUMN update_interval_seconds INTEGER NOT NULL DEFAULT {UPDATE_INTERVAL}"
+            )
+
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )"""
+        )
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS update_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                list_id TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                completed_at TEXT,
+                state TEXT NOT NULL,
+                movie_count INTEGER NOT NULL DEFAULT 0,
+                added_count INTEGER NOT NULL DEFAULT 0,
+                removed_count INTEGER NOT NULL DEFAULT 0,
+                message TEXT,
+                FOREIGN KEY (list_id) REFERENCES lists(id) ON DELETE CASCADE
+            )"""
+        )
 
 
 def now():
