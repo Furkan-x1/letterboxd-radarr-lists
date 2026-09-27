@@ -1,3 +1,4 @@
+import io
 import json
 import logging
 import os
@@ -12,7 +13,7 @@ from urllib.parse import urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
-from flask import Flask, Response, jsonify, redirect, render_template, request, url_for
+from flask import Flask, Response, jsonify, redirect, render_template, request, send_file, url_for
 
 DB_PATH = os.getenv("DB_PATH", "/data/app.db")
 PORT = int(os.getenv("PORT", "5000"))
@@ -43,7 +44,6 @@ scrape_lock = threading.Lock()
 scrape_job_lock = threading.Lock()
 refresh_lock = threading.Lock()
 active_refreshes = {}
-global_pause_until = 0.0
 refresh_cancel_requested = False
 last_request_at = 0.0
 post_rate_limit = {}
@@ -124,6 +124,18 @@ def init_db():
                 FOREIGN KEY (list_id) REFERENCES lists(id) ON DELETE CASCADE
             )"""
         )
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS update_changes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                history_id INTEGER NOT NULL,
+                change_type TEXT NOT NULL,
+                tmdb_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                year INTEGER,
+                letterboxd_path TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY (history_id) REFERENCES update_history(id) ON DELETE CASCADE
+            )"""
+        )
 
 
 def now():
@@ -190,6 +202,43 @@ def finish_history(history_id, state, movie_count=0, added_count=0, removed_coun
                    removed_count = ?, message = ?
                WHERE id = ?""",
             (now(), state, movie_count, added_count, removed_count, message, history_id),
+        )
+
+
+def record_changes(history_id, added_movies, removed_movies):
+    changes = [
+        (
+            history_id,
+            "added",
+            movie["id"],
+            movie["title"],
+            movie["release_year"],
+            movie["letterboxd_path"],
+        )
+        for movie in added_movies
+    ]
+    changes.extend(
+        (
+            history_id,
+            "removed",
+            movie["id"],
+            movie["title"],
+            movie["release_year"],
+            movie["letterboxd_path"],
+        )
+        for movie in removed_movies
+    )
+
+    if not changes:
+        return
+
+    with db() as connection:
+        connection.executemany(
+            """INSERT INTO update_changes(
+                history_id, change_type, tmdb_id, title, year, letterboxd_path
+            )
+            VALUES (?, ?, ?, ?, ?, ?)""",
+            changes,
         )
 
 
@@ -276,7 +325,7 @@ def check_refresh_cancelled():
 def get(url):
     check_refresh_cancelled()
     if not allowed(url):
-        raise RuntimeError(f"robots.txt disallows {url}")
+        raise RuntimeError("Letterboxd robots.txt does not allow this request.")
 
     last_error = None
     for attempt in range(RETRY_ATTEMPTS):
@@ -287,14 +336,36 @@ def get(url):
             response = session.get(url, timeout=REQUEST_TIMEOUT)
             check_refresh_cancelled()
             if response.status_code == 429:
-                last_error = RuntimeError("Letterboxd rate limit (429)")
+                last_error = RuntimeError(
+                    "Letterboxd rate-limited the request (429)."
+                )
+            elif response.status_code == 403:
+                last_error = RuntimeError(
+                    "Letterboxd denied the request (403)."
+                )
+            elif response.status_code == 404:
+                last_error = RuntimeError(
+                    "Letterboxd page was not found (404). The list may be private or deleted."
+                )
             elif response.status_code >= 500:
-                last_error = RuntimeError(f"Letterboxd server error ({response.status_code})")
+                last_error = RuntimeError(
+                    f"Letterboxd server error ({response.status_code})."
+                )
             else:
                 response.raise_for_status()
                 return response.text
+        except requests.Timeout:
+            last_error = RuntimeError(
+                f"Letterboxd request timed out after {REQUEST_TIMEOUT}s."
+            )
+        except requests.ConnectionError as exc:
+            last_error = RuntimeError(
+                f"Could not connect to Letterboxd: {exc}"
+            )
         except requests.RequestException as exc:
-            last_error = exc
+            last_error = RuntimeError(
+                f"Letterboxd request failed: {exc}"
+            )
 
         if attempt + 1 < RETRY_ATTEMPTS:
             retry_after = response.headers.get("Retry-After") if response is not None else None
@@ -630,16 +701,30 @@ def refresh_list(list_id, force=False):
                 message="Starting Letterboxd update...",
             )
 
-            old_paths = set(load_cached_movies(list_id))
+            old_movies = load_cached_movies(list_id)
+            old_paths = set(old_movies)
             movies, scraped_name, saw_film_paths = scrape_list(
                 list_id,
                 row["letterboxd_url"],
             )
 
             watchlist = is_watchlist_url(row["letterboxd_url"])
-            new_paths = {movie["letterboxd_path"] for movie in movies}
-            added_count = len(new_paths - old_paths)
-            removed_count = len(old_paths - new_paths) if watchlist else 0
+            new_by_path = {
+                movie["letterboxd_path"]: movie
+                for movie in movies
+            }
+            new_paths = set(new_by_path)
+            added_movies = [
+                movie for path, movie in new_by_path.items()
+                if path not in old_paths
+            ]
+            removed_movies = [
+                old_movies[path]
+                for path in old_paths - new_paths
+                if watchlist and path in old_movies
+            ]
+            added_count = len(added_movies)
+            removed_count = len(removed_movies)
 
             if watchlist and saw_film_paths and not movies:
                 raise RuntimeError(
@@ -663,6 +748,7 @@ def refresh_list(list_id, force=False):
                     )
 
             message = f"Updated successfully: {len(movies)} films."
+            record_changes(history_id, added_movies, removed_movies)
             finish_history(
                 history_id,
                 "completed",
@@ -888,7 +974,8 @@ def index():
     return render_template(
         "index.html",
         lists=lists,
-        error=None,
+        error=request.args.get("error"),
+        duplicate_id=request.args.get("duplicate_id"),
         update_interval_ms=UPDATE_INTERVAL * 1000,
         global_pause_until=pause_until,
         active_count=active_count,
@@ -965,7 +1052,7 @@ def list_detail(list_id):
         ]
 
         history = connection.execute(
-            """SELECT started_at, completed_at, state, movie_count,
+            """SELECT id, started_at, completed_at, state, movie_count,
                       added_count, removed_count, message
                FROM update_history
                WHERE list_id = ?
@@ -974,11 +1061,27 @@ def list_detail(list_id):
             (list_id,),
         ).fetchall()
 
+        history_ids = [entry["id"] for entry in history]
+        changes_by_history = {history_id: [] for history_id in history_ids}
+        if history_ids:
+            placeholders = ",".join("?" for _ in history_ids)
+            changes = connection.execute(
+                f"""SELECT history_id, change_type, tmdb_id, title, year, letterboxd_path
+                    FROM update_changes
+                    WHERE history_id IN ({placeholders})
+                    ORDER BY id""",
+                history_ids,
+            ).fetchall()
+
+            for change in changes:
+                changes_by_history[change["history_id"]].append(change)
+
     return render_template(
         "list.html",
         item=item,
         movies=movies,
         history=history,
+        changes_by_history=changes_by_history,
         query=query,
         selected_year=selected_year,
         years=years,
@@ -1075,6 +1178,7 @@ def create_list():
             active_count=0,
             due_count=0,
             time_zone=os.getenv("TZ", "UTC"),
+            duplicate_id=None,
         ), 400
 
     with db() as connection:
@@ -1084,7 +1188,13 @@ def create_list():
         ).fetchone()
 
     if existing:
-        return redirect(url_for("index"))
+        return redirect(
+            url_for(
+                "index",
+                error="This Letterboxd list is already added.",
+                duplicate_id=existing["id"],
+            )
+        )
 
     list_id = uuid.uuid4().hex[:12]
     name = letterboxd_url.rstrip("/").split("/")[-1]
@@ -1152,12 +1262,112 @@ def toggle_list(list_id):
     return redirect(url_for("index"))
 
 
+@app.post("/lists/<list_id>/rename")
+def rename_list(list_id):
+    name = request.form.get("name", "").strip()
+    if not name:
+        return redirect(url_for("list_detail", list_id=list_id))
+
+    with db() as connection:
+        connection.execute(
+            "UPDATE lists SET name = ? WHERE id = ?",
+            (name[:120], list_id),
+        )
+
+    return redirect(url_for("list_detail", list_id=list_id))
+
+
 @app.post("/lists/<list_id>/delete")
 def delete_list(list_id):
     with db() as connection:
+        connection.execute(
+            """DELETE FROM update_changes
+               WHERE history_id IN (
+                   SELECT id FROM update_history WHERE list_id = ?
+               )""",
+            (list_id,),
+        )
         connection.execute("DELETE FROM movies WHERE list_id = ?", (list_id,))
         connection.execute("DELETE FROM update_history WHERE list_id = ?", (list_id,))
         connection.execute("DELETE FROM lists WHERE id = ?", (list_id,))
+
+    return redirect(url_for("index"))
+
+
+@app.get("/backup")
+def backup_database():
+    source = sqlite3.connect(DB_PATH)
+    target = sqlite3.connect(":memory:")
+
+    try:
+        source.backup(target)
+        data = target.serialize()
+    finally:
+        target.close()
+        source.close()
+
+    return send_file(
+        io.BytesIO(data),
+        mimetype="application/octet-stream",
+        as_attachment=True,
+        download_name="letterboxd-radarr-lists.db",
+    )
+
+
+@app.get("/export")
+def export_data():
+    with db() as connection:
+        lists = connection.execute(
+            """SELECT id, letterboxd_url, name, created_at, updated_at,
+                      last_error, enabled, update_interval_seconds
+               FROM lists
+               ORDER BY created_at"""
+        ).fetchall()
+
+        export_lists = []
+        for item in lists:
+            movies = connection.execute(
+                """SELECT tmdb_id, imdb_id, title, year, letterboxd_path
+                   FROM movies
+                   WHERE list_id = ?
+                   ORDER BY rowid""",
+                (item["id"],),
+            ).fetchall()
+
+            export_lists.append({
+                "id": item["id"],
+                "letterboxd_url": item["letterboxd_url"],
+                "name": item["name"],
+                "created_at": item["created_at"],
+                "updated_at": item["updated_at"],
+                "last_error": item["last_error"],
+                "enabled": bool(item["enabled"]),
+                "update_interval_seconds": item["update_interval_seconds"],
+                "movies": [dict(movie) for movie in movies],
+            })
+
+    payload = {
+        "format": 1,
+        "exported_at": now(),
+        "lists": export_lists,
+    }
+
+    return Response(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        mimetype="application/json",
+        headers={
+            "Content-Disposition": "attachment; filename=letterboxd-radarr-lists.json"
+        },
+    )
+
+
+@app.post("/refresh-all")
+def refresh_all():
+    with db() as connection:
+        rows = connection.execute("SELECT id FROM lists ORDER BY created_at").fetchall()
+
+    for row in rows:
+        start_refresh(row["id"], force=True)
 
     return redirect(url_for("index"))
 
