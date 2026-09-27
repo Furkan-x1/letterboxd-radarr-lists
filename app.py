@@ -29,6 +29,7 @@ USER_AGENT = os.getenv(
 )
 
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
 log = logging.getLogger("letterboxd-radarr-lists")
 session = requests.Session()
 session.headers.update({"User-Agent": USER_AGENT})
@@ -43,6 +44,8 @@ active_refreshes = {}
 global_pause_until = 0.0
 refresh_cancel_requested = False
 last_request_at = 0.0
+post_rate_limit = {}
+post_rate_lock = threading.Lock()
 
 
 def db():
@@ -746,6 +749,28 @@ def updater_loop():
         time.sleep(UPDATER_POLL_SECONDS)
 
 
+
+
+def post_allowed():
+    ip = request.remote_addr or "unknown"
+    cutoff = time.monotonic() - 60
+    with post_rate_lock:
+        timestamps = [
+            value for value in post_rate_limit.get(ip, [])
+            if value > cutoff
+        ]
+        if len(timestamps) >= 20:
+            post_rate_limit[ip] = timestamps
+            return False
+        timestamps.append(time.monotonic())
+        post_rate_limit[ip] = timestamps
+    return True
+
+
+@app.before_request
+def protect_posts():
+    if request.method == "POST" and not post_allowed():
+        return jsonify({"error": "Too many requests. Try again later."}), 429
 
 
 @app.post("/pause-refresh")
