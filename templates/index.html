@@ -9,7 +9,7 @@
 main{max-width:1100px;margin:0 auto;padding:38px 22px 60px}header{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;margin-bottom:26px}h1{margin:0 0 6px;font-size:30px;letter-spacing:-.02em}.subtitle{margin:0;color:var(--muted)}
 a{color:var(--accent)}button,.button{border:1px solid var(--border);background:var(--panel2);color:var(--text);border-radius:8px;padding:9px 13px;font:inherit;cursor:pointer;text-decoration:none;display:inline-block}.button:hover,button:hover{border-color:#59616c}.primary{background:var(--accent);border-color:var(--accent);color:#061006;font-weight:650}.danger{color:#ff9aa0}.error{color:var(--danger);background:#2a171a;border:1px solid #512328;border-radius:8px;padding:10px 12px;margin-bottom:18px}.success{color:var(--accent);background:#14251a;border:1px solid #24532f;border-radius:8px;padding:10px 12px;margin-bottom:18px}
 .dashboard{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px}.metric{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:13px 15px}.metric strong{display:block;font-size:22px}.metric span{color:var(--muted);font-size:13px}
-.global-controls{display:flex;align-items:center;gap:12px;margin-bottom:18px}.tools{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}.global-paused{color:var(--warn)}.add{display:flex;gap:10px;margin-bottom:26px}.add input{flex:1;min-width:0;background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:9px;padding:12px 14px;font:inherit;outline:none}.add input:focus{border-color:var(--accent)}
+.global-controls{display:flex;align-items:center;gap:12px}.tools{display:flex;gap:8px;flex-wrap:wrap}.utility{margin-top:28px;padding-top:20px;border-top:1px solid var(--border)}.utility-title{margin:0 0 10px;font-size:14px;color:var(--muted);font-weight:600}.discovery{margin:18px 0 26px;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px}.discovery h2{margin:0 0 4px;font-size:18px}.discovery-subtitle{margin:0 0 14px;color:var(--muted);font-size:13px}.discovery-error{color:var(--warn);background:#292516;border:1px solid #514823;border-radius:8px;padding:9px 11px;margin:12px 0}.discovery-list{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:11px 0;border-top:1px solid var(--border)}.discovery-list:first-of-type{border-top:0}.discovery-name{font-weight:600}.discovery-url{color:var(--muted);font-size:12px;word-break:break-all}.discovery-list form{margin:0}.global-paused{color:var(--warn)}.add{display:flex;gap:10px;margin-bottom:26px}.add input{flex:1;min-width:0;background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:9px;padding:12px 14px;font:inherit;outline:none}.add input:focus{border-color:var(--accent)}
 .cards{display:grid;gap:14px}.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px}.card-head{display:flex;justify-content:space-between;gap:20px;align-items:flex-start}.card h2{margin:0 0 4px;font-size:20px}.card h2 a{color:inherit;text-decoration:none}.card h2 a:hover{text-decoration:underline}.url{color:var(--muted);font-size:13px;word-break:break-all}.stats{display:flex;gap:18px;margin:14px 0;color:var(--muted);font-size:14px;flex-wrap:wrap}.stats strong{color:var(--text)}.change{color:var(--accent)}.removed{color:var(--danger)}
 .status{margin:10px 0;padding:10px 12px;border-radius:8px;background:var(--panel2);color:var(--muted)}.status.updating{color:var(--text)}.status.completed{color:var(--accent)}.status.error{color:var(--danger);background:#2a171a}.status.paused{color:var(--warn);background:#292516}.progress{height:5px;background:#2c3138;border-radius:99px;overflow:hidden;margin-top:8px}.progress>span{display:block;height:100%;background:var(--accent);width:0;transition:width .2s}.next{margin:8px 0;color:var(--muted);font-size:13px}
 .endpoint{display:flex;gap:8px;align-items:center;margin:15px 0}.endpoint code{flex:1;min-width:0;background:#101215;border:1px solid var(--border);border-radius:7px;padding:9px 10px;color:#c9ced5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.inline-form{display:flex;gap:7px;align-items:center}.select{background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:9px 10px;font:inherit}.empty{color:var(--muted);padding:35px 0;text-align:center}.top-link{color:var(--muted);text-decoration:none;font-size:13px}.top-link:hover{color:var(--text)}
@@ -25,13 +25,20 @@ a{color:var(--accent)}button,.button{border:1px solid var(--border);background:v
 <div class="metric"><strong>{{ active_count }}</strong><span>Updating now</span></div>
 <div class="metric"><strong>{{ due_count }}</strong><span>Updates due</span></div>
 </div>
-<div class="global-controls">
-{% if global_pause_until %}<form method="post" action="{{ url_for('resume_refresh') }}"><button type="submit">Resume automatic updates</button></form><div class="global-paused">Automatic updates paused for 12 hours</div>
-{% else %}<form method="post" action="{{ url_for('pause_refresh') }}"><button type="submit">Pause automatic updates for 12 hours</button></form>{% endif %}
+<form class="add" method="post" action="{{ url_for('create_list') }}"><input name="letterboxd_url" type="text" placeholder="Letterboxd list URL or username" required><button class="primary" type="submit">Add list</button></form>
+{% if discovery_profile %}
+<section class="discovery">
+<h2>Lists for {{ discovery_profile }}</h2>
+<p class="discovery-subtitle">Select the public lists you want to add. Watchlist is included automatically.</p>
+{% if discovery_error %}<div class="discovery-error">{{ discovery_error }}</div>{% endif %}
+{% for item in discovery_lists %}
+<div class="discovery-list">
+<div><div class="discovery-name">{{ item["name"] }}{% if item.get("is_watchlist") %} <span style="color:var(--muted);font-size:12px;font-weight:400">Watchlist</span>{% endif %}</div><div class="discovery-url">{{ item["url"] }}</div></div>
+<form method="post" action="{{ url_for('add_discovered_list') }}"><input type="hidden" name="letterboxd_url" value="{{ item["url"] }}"><button type="submit">Add</button></form>
 </div>
-<div class="tools"><a class="button" href="{{ url_for('backup_database') }}">Download database backup</a><a class="button" href="{{ url_for('export_data') }}">Export JSON</a><a class="button" href="{{ url_for('discover_page') }}">Discover profile lists</a>{% if lists %}<form method="post" action="{{ url_for('refresh_all') }}" onsubmit="return confirm('Refresh all lists now?');"><button type="submit">Refresh all lists</button></form>{% endif %}</div>
-<form class="add" method="post" action="{{ url_for('import_data') }}" enctype="multipart/form-data"><input name="file" type="file" accept=".json,application/json" required><button type="submit">Import JSON</button></form>
-<form class="add" method="post" action="{{ url_for('create_list') }}"><input name="letterboxd_url" type="text" placeholder="username/watchlist or username/list/example" required><button class="primary" type="submit">Add list</button></form>
+{% endfor %}
+</section>
+{% endif %}
 {% if not lists %}<p class="empty">No lists configured.</p>{% endif %}
 <div class="cards">
 {% for item in lists %}
@@ -43,7 +50,19 @@ a{color:var(--accent)}button,.button{border:1px solid var(--border);background:v
 {% if item["last_error"] %}<div class="status error">Last error: {{ item["last_error"] }}</div>{% endif %}
 <div class="actions"><a class="button" href="{{ url_for('list_detail', list_id=item['id']) }}">View movies</a><form class="inline-form" method="post" action="{{ url_for('manual_refresh', list_id=item['id']) }}"><button type="submit">Refresh now</button></form><form class="inline-form" method="post" action="{{ url_for('set_interval', list_id=item['id']) }}"><select class="select" name="update_interval_seconds" onchange="this.form.submit()" aria-label="Update interval"><option value="21600" {% if item['update_interval_seconds']==21600 %}selected{% endif %}>Every 6 hours</option><option value="43200" {% if item['update_interval_seconds']==43200 %}selected{% endif %}>Every 12 hours</option><option value="86400" {% if item['update_interval_seconds']==86400 %}selected{% endif %}>Every 24 hours</option></select></form><form class="inline-form" method="post" action="{{ url_for('toggle_list', list_id=item['id']) }}"><button type="submit">{{ "Pause updates" if item["enabled"] else "Resume updates" }}</button></form><form class="inline-form" method="post" action="{{ url_for('delete_list', list_id=item['id']) }}" onsubmit="return confirm('Delete this list and its stored movie data?');"><button class="danger" type="submit">Delete</button></form></div>
 </section>
-{% endfor %}</div></main>
+{% endfor %}</div>
+<section class="utility">
+<p class="utility-title">Tools & maintenance</p>
+<div class="tools">
+{% if global_pause_until %}<form class="inline-form" method="post" action="{{ url_for('resume_refresh') }}"><button type="submit">Resume automatic updates</button></form><div class="global-paused">Automatic updates paused for 12 hours</div>
+{% else %}<form class="inline-form" method="post" action="{{ url_for('pause_refresh') }}"><button type="submit">Pause automatic updates for 12 hours</button></form>{% endif %}
+{% if lists %}<form class="inline-form" method="post" action="{{ url_for('refresh_all') }}" onsubmit="return confirm('Refresh all lists now?');"><button type="submit">Refresh all lists</button></form>{% endif %}
+<a class="button" href="{{ url_for('backup_database') }}">Download database backup</a>
+<a class="button" href="{{ url_for('export_data') }}">Export JSON</a>
+</div>
+<form class="add" style="margin-top:12px;margin-bottom:0" method="post" action="{{ url_for('import_data') }}" enctype="multipart/form-data"><input name="file" type="file" accept=".json,application/json" required><button type="submit">Import JSON</button></form>
+</section>
+</main>
 <script>
 const DISPLAY_TIME_ZONE = {{ time_zone|tojson }};
 function formatLastUpdated(value){const date=new Date(value);if(Number.isNaN(date.getTime()))return value;try{return new Intl.DateTimeFormat("en-GB",{timeZone:DISPLAY_TIME_ZONE,year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(date).replace(",","")}catch(_){return date.toLocaleString("en-GB")}}
