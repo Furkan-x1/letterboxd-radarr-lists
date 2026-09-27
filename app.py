@@ -32,7 +32,7 @@ USER_AGENT = os.getenv(
 )
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
+app.config["MAX_CONTENT_LENGTH"] = 32 * 1024 * 1024
 log = logging.getLogger("letterboxd-radarr-lists")
 session = requests.Session()
 session.headers.update({"User-Agent": USER_AGENT})
@@ -247,8 +247,7 @@ def record_changes(history_id, added_movies, removed_movies):
 
     if not changes:
         return
-    with db() as connection:
-        connection.executemany(
+    with db() as connection:        connection.executemany(
             """INSERT INTO update_changes(
                 history_id, change_type, tmdb_id, title, year, letterboxd_path
             )
@@ -334,32 +333,46 @@ def normalize_profile_url(value):
 
 
 def discover_profile_lists(profile_url):
-    html = get(profile_url + "lists/")
-    soup = BeautifulSoup(html, "html.parser")
     username = urlparse(profile_url).path.strip("/").split("/")[0]
-
     result = []
     seen = set()
 
-    for anchor in soup.select("a[href]"):
-        href = anchor.get("href", "")
-        match = re.match(rf"^/{re.escape(username)}/list/([^/?#]+)/?$", href)
-        if not match:
-            continue
+    for page in range(1, MAX_PAGES + 1):
+        page_url = (
+            f"{profile_url}lists/"
+            if page == 1
+            else f"{profile_url}lists/page/{page}/"
+        )
+        html = get(page_url)
+        soup = BeautifulSoup(html, "html.parser")
+        found_on_page = 0
 
-        url = urljoin("https://letterboxd.com", f"/{username}/list/{match.group(1)}/")
-        if url in seen:
-            continue
+        for anchor in soup.select("a[href]"):
+            href = anchor.get("href", "")
+            match = re.match(rf"^/{re.escape(username)}/list/([^/?#]+)/?$", href)
+            if not match:
+                continue
 
-        name = anchor.get_text(" ", strip=True)
-        if not name:
-            continue
+            url = urljoin(
+                "https://letterboxd.com",
+                f"/{username}/list/{match.group(1)}/",
+            )
+            if url in seen:
+                continue
 
-        seen.add(url)
-        result.append({
-            "name": name,
-            "url": url,
-        })
+            name = anchor.get_text(" ", strip=True)
+            if not name:
+                continue
+
+            seen.add(url)
+            result.append({
+                "name": name,
+                "url": url,
+            })
+            found_on_page += 1
+
+        if found_on_page == 0:
+            break
 
     return result
 
@@ -497,7 +510,6 @@ def extract_film_paths(html):
                 continue
 
             path = f"/film/{match.group(1)}/"
-
             if path not in seen:
                 seen.add(path)
                 result.append(path)
@@ -747,8 +759,7 @@ def store_movies(list_id, movies, watchlist):
                 title = excluded.title,
                 year = excluded.year,
                 letterboxd_path = excluded.letterboxd_path""",
-            [
-                (
+            [                (
                     list_id,
                     movie["id"],
                     movie["imdb_id"],
@@ -997,8 +1008,7 @@ def discover_page():
         "discover.html",
         profile_url="",
         lists=[],
-        error=request.args.get("error"),
-    )
+        error=request.args.get("error"),    )
 
 
 @app.post("/discover")
@@ -1247,8 +1257,7 @@ def list_detail(list_id):
 @app.get("/lists/<list_id>/status")
 def list_status(list_id):
     with db() as connection:
-        row = connection.execute(
-            """SELECT updated_at, last_error, enabled, update_interval_seconds
+        row = connection.execute(            """SELECT updated_at, last_error, enabled, update_interval_seconds
                FROM lists WHERE id = ?""",
             (list_id,),
         ).fetchone()
@@ -1497,8 +1506,7 @@ def backup_database():
 
     try:
         source.backup(target)
-        data = target.serialize()
-    finally:
+        data = target.serialize()    finally:
         target.close()
         source.close()
 
