@@ -247,7 +247,6 @@ def record_changes(history_id, added_movies, removed_movies):
 
     if not changes:
         return
-
     with db() as connection:
         connection.executemany(
             """INSERT INTO update_changes(
@@ -307,6 +306,62 @@ def normalize_letterboxd_url(value):
         )
 
     return urljoin("https://letterboxd.com", path)
+
+
+
+def normalize_profile_url(value):
+    value = value.strip()
+
+    if not value:
+        raise ValueError("Enter a Letterboxd profile URL or username.")
+
+    if not re.match(r"^https?://", value, re.IGNORECASE):
+        value = "https://letterboxd.com/" + value.strip("/")
+
+    parsed = urlparse(value)
+
+    if parsed.scheme != "https" or parsed.netloc.lower() not in {
+        "letterboxd.com",
+        "www.letterboxd.com",
+    }:
+        raise ValueError("Only Letterboxd profile URLs are supported.")
+
+    path = parsed.path.rstrip("/") + "/"
+    if not re.match(r"^/[^/]+/$", path):
+        raise ValueError("Enter a Letterboxd profile URL such as username/.")
+
+    return urljoin("https://letterboxd.com", path)
+
+
+def discover_profile_lists(profile_url):
+    html = get(profile_url + "lists/")
+    soup = BeautifulSoup(html, "html.parser")
+    username = urlparse(profile_url).path.strip("/").split("/")[0]
+
+    result = []
+    seen = set()
+
+    for anchor in soup.select("a[href]"):
+        href = anchor.get("href", "")
+        match = re.match(rf"^/{re.escape(username)}/list/([^/?#]+)/?$", href)
+        if not match:
+            continue
+
+        url = urljoin("https://letterboxd.com", f"/{username}/list/{match.group(1)}/")
+        if url in seen:
+            continue
+
+        name = anchor.get_text(" ", strip=True)
+        if not name:
+            continue
+
+        seen.add(url)
+        result.append({
+            "name": name,
+            "url": url,
+        })
+
+    return result
 
 
 def is_watchlist_url(value):
@@ -497,7 +552,6 @@ def extract_tmdb_id(html):
         )
         if match:
             return match.group(1)
-
     return None
 
 
@@ -747,8 +801,7 @@ def refresh_list(list_id, force=False):
 
             old_movies = load_cached_movies(list_id)
             old_paths = set(old_movies)
-            movies, scraped_name, saw_film_paths, unmatched_movies = scrape_list(
-                list_id,
+            movies, scraped_name, saw_film_paths, unmatched_movies = scrape_list(                list_id,
                 row["letterboxd_url"],
             )
 
@@ -937,6 +990,37 @@ def refresh_status():
     })
 
 
+
+@app.get("/discover")
+def discover_page():
+    return render_template(
+        "discover.html",
+        profile_url="",
+        lists=[],
+        error=request.args.get("error"),
+    )
+
+
+@app.post("/discover")
+def discover_profile():
+    try:
+        profile_url = normalize_profile_url(request.form.get("profile_url", ""))
+        lists = discover_profile_lists(profile_url)
+        return render_template(
+            "discover.html",
+            profile_url=profile_url,
+            lists=lists,
+            error=None if lists else "No public lists were found on this profile.",
+        )
+    except Exception as exc:
+        return render_template(
+            "discover.html",
+            profile_url=request.form.get("profile_url", ""),
+            lists=[],
+            error=str(exc),
+        ), 400
+
+
 @app.get("/status")
 def status_page():
     with db() as connection:
@@ -997,8 +1081,7 @@ def index():
                 WHERE h.list_id = l.id ORDER BY h.id DESC LIMIT 1) AS last_removed,
                (SELECT COUNT(*) FROM unmatched_movies u
                 WHERE u.history_id = (
-                    SELECT h.id FROM update_history h
-                    WHERE h.list_id = l.id ORDER BY h.id DESC LIMIT 1
+                    SELECT h.id FROM update_history h                    WHERE h.list_id = l.id ORDER BY h.id DESC LIMIT 1
                 )) AS last_unmatched
                FROM lists l
                LEFT JOIN movies m ON m.list_id = l.id
@@ -1026,6 +1109,7 @@ def index():
         lists=lists,
         error=request.args.get("error"),
         duplicate_id=request.args.get("duplicate_id"),
+        message=request.args.get("message"),
         update_interval_ms=UPDATE_INTERVAL * 1000,
         global_pause_until=pause_until,
         active_count=active_count,
@@ -1247,6 +1331,44 @@ def create_list():
             time_zone=os.getenv("TZ", "UTC"),
             duplicate_id=None,
         ), 400
+    with db() as connection:
+        existing = connection.execute(
+            "SELECT id FROM lists WHERE letterboxd_url = ?",
+            (letterboxd_url,),
+        ).fetchone()
+
+    if existing:
+        return redirect(
+            url_for(
+                "index",
+                error="This Letterboxd list is already added.",
+                duplicate_id=existing["id"],
+            )
+        )
+
+    list_id = uuid.uuid4().hex[:12]
+    name = letterboxd_url.rstrip("/").split("/")[-1]
+
+    with db() as connection:
+        connection.execute(
+            """INSERT INTO lists(
+                id, letterboxd_url, name, created_at, update_interval_seconds
+            )
+            VALUES (?, ?, ?, ?, ?)""",
+            (list_id, letterboxd_url, name, now(), UPDATE_INTERVAL),
+        )
+
+    start_refresh(list_id, force=True)
+    return redirect(url_for("index"))
+
+
+
+@app.post("/lists/add-discovered")
+def add_discovered_list():
+    try:
+        letterboxd_url = normalize_letterboxd_url(request.form["letterboxd_url"])
+    except (KeyError, ValueError) as exc:
+        return redirect(url_for("discover_page", error=str(exc)))
 
     with db() as connection:
         existing = connection.execute(
@@ -1433,6 +1555,138 @@ def export_data():
             "Content-Disposition": "attachment; filename=letterboxd-radarr-lists.json"
         },
     )
+
+
+
+@app.post("/import")
+def import_data():
+    uploaded = request.files.get("file")
+
+    if not uploaded or not uploaded.filename:
+        return redirect(url_for("index", error="Select a JSON export file."))
+
+    if not uploaded.filename.lower().endswith(".json"):
+        return redirect(url_for("index", error="Only JSON export files are supported."))
+
+    try:
+        raw = uploaded.read()
+        payload = json.loads(raw.decode("utf-8"))
+        if payload.get("format") != 1 or not isinstance(payload.get("lists"), list):
+            raise ValueError("Unsupported export format.")
+
+        imported_lists = 0
+        imported_movies = 0
+        skipped_lists = 0
+
+        with db() as connection:
+            for item in payload["lists"]:
+                if not isinstance(item, dict):
+                    raise ValueError("Invalid list entry in export.")
+
+                list_url = normalize_letterboxd_url(str(item.get("letterboxd_url", "")))
+                name = str(item.get("name", "")).strip()[:120] or list_url.rstrip("/").split("/")[-1]
+                movies = item.get("movies", [])
+                if not isinstance(movies, list):
+                    raise ValueError(f"Invalid movies data for {name}.")
+
+                existing = connection.execute(
+                    "SELECT id FROM lists WHERE letterboxd_url = ?",
+                    (list_url,),
+                ).fetchone()
+
+                list_id = str(item.get("id", "")).strip()
+                if not re.fullmatch(r"[0-9a-f]{12}", list_id, re.IGNORECASE):
+                    list_id = uuid.uuid4().hex[:12]
+
+                if existing:
+                    list_id = existing["id"]
+                    connection.execute(
+                        """UPDATE lists
+                           SET name = ?, updated_at = ?, last_error = ?, enabled = ?,
+                               update_interval_seconds = ?
+                           WHERE id = ?""",
+                        (
+                            name,
+                            item.get("updated_at"),
+                            item.get("last_error"),
+                            1 if item.get("enabled", True) else 0,
+                            int(item.get("update_interval_seconds", UPDATE_INTERVAL)),
+                            list_id,
+                        ),
+                    )
+                    connection.execute("DELETE FROM movies WHERE list_id = ?", (list_id,))
+                    skipped_lists += 1
+                else:
+                    collision = connection.execute(
+                        "SELECT 1 FROM lists WHERE id = ?",
+                        (list_id,),
+                    ).fetchone()
+                    if collision:
+                        list_id = uuid.uuid4().hex[:12]
+
+                    connection.execute(
+                        """INSERT INTO lists(
+                            id, letterboxd_url, name, created_at, updated_at,
+                            last_error, enabled, update_interval_seconds
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (
+                            list_id,
+                            list_url,
+                            name,
+                            item.get("created_at") or now(),
+                            item.get("updated_at"),
+                            item.get("last_error"),
+                            1 if item.get("enabled", True) else 0,
+                            int(item.get("update_interval_seconds", UPDATE_INTERVAL)),
+                        ),
+                    )
+                    imported_lists += 1
+
+                valid_movies = []
+                for movie in movies:
+                    if not isinstance(movie, dict):
+                        continue
+                    try:
+                        tmdb_id = int(movie["tmdb_id"])
+                        title = str(movie["title"]).strip()
+                    except (KeyError, TypeError, ValueError):
+                        continue
+                    if tmdb_id <= 0 or not title:
+                        continue
+                    valid_movies.append((
+                        list_id,
+                        tmdb_id,
+                        str(movie.get("imdb_id") or ""),
+                        title,
+                        movie.get("year"),
+                        str(movie.get("letterboxd_path") or ""),
+                    ))
+
+                connection.executemany(
+                    """INSERT INTO movies(
+                        list_id, tmdb_id, imdb_id, title, year, letterboxd_path
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(list_id, tmdb_id) DO UPDATE SET
+                        imdb_id = excluded.imdb_id,
+                        title = excluded.title,
+                        year = excluded.year,
+                        letterboxd_path = excluded.letterboxd_path""",
+                    valid_movies,
+                )
+                imported_movies += len(valid_movies)
+
+        message = (
+            f"Import complete: {imported_lists} new lists, "
+            f"{imported_movies} movies restored"
+        )
+        if skipped_lists:
+            message += f", {skipped_lists} existing lists replaced"
+        return redirect(url_for("index", message=message))
+
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError, TypeError) as exc:
+        return redirect(url_for("index", error=f"Import failed: {exc}"))
 
 
 @app.post("/refresh-all")
