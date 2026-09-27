@@ -136,6 +136,9 @@ def init_db():
                 FOREIGN KEY (history_id) REFERENCES update_history(id) ON DELETE CASCADE
             )"""
         )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_update_changes_history_id ON update_changes(history_id)"
+        )
 
 
 def now():
@@ -1069,7 +1072,8 @@ def list_detail(list_id):
                 f"""SELECT history_id, change_type, tmdb_id, title, year, letterboxd_path
                     FROM update_changes
                     WHERE history_id IN ({placeholders})
-                    ORDER BY id""",
+                    ORDER BY id DESC
+                    LIMIT 2000""",
                 history_ids,
             ).fetchall()
 
