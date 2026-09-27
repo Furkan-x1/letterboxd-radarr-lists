@@ -334,8 +334,12 @@ def normalize_profile_url(value):
 
 def discover_profile_lists(profile_url):
     username = urlparse(profile_url).path.strip("/").split("/")[0]
-    result = []
-    seen = set()
+    result = [{
+        "name": f"{username}'s Watchlist",
+        "url": urljoin("https://letterboxd.com", f"/{username}/watchlist/"),
+        "is_watchlist": True,
+    }]
+    seen = {result[0]["url"]}
 
     for page in range(1, MAX_PAGES + 1):
         page_url = (
@@ -368,6 +372,7 @@ def discover_profile_lists(profile_url):
             result.append({
                 "name": name,
                 "url": url,
+                "is_watchlist": False,
             })
             found_on_page += 1
 
