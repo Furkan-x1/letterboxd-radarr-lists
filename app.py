@@ -802,17 +802,41 @@ def health():
 def index():
     with db() as connection:
         lists = connection.execute(
-            """SELECT l.*, COUNT(m.tmdb_id) AS movie_count
+            """SELECT l.*, COUNT(m.tmdb_id) AS movie_count,
+               (SELECT added_count FROM update_history h
+                WHERE h.list_id = l.id ORDER BY h.id DESC LIMIT 1) AS last_added,
+               (SELECT removed_count FROM update_history h
+                WHERE h.list_id = l.id ORDER BY h.id DESC LIMIT 1) AS last_removed
                FROM lists l
                LEFT JOIN movies m ON m.list_id = l.id
                GROUP BY l.id
                ORDER BY l.created_at DESC"""
         ).fetchall()
 
+    pause_until = get_global_pause_until()
+
+    with refresh_lock:
+        active_count = len(active_refreshes)
+
+    due_count = sum(
+        1
+        for item in lists
+        if item["enabled"]
+        and next_update_timestamp(
+            item["updated_at"],
+            item["update_interval_seconds"],
+        ) <= time.time()
+    )
+
     return render_template(
         "index.html",
         lists=lists,
+        error=None,
         update_interval_ms=UPDATE_INTERVAL * 1000,
+        global_pause_until=pause_until,
+        active_count=active_count,
+        due_count=due_count,
+        time_zone=os.getenv("TZ", "UTC"),
     )
 
 
