@@ -340,6 +340,7 @@ def discover_profile_lists(profile_url):
         "is_watchlist": True,
     }]
     seen = {result[0]["url"]}
+    warning = None
 
     for page in range(1, MAX_PAGES + 1):
         page_url = (
@@ -347,7 +348,14 @@ def discover_profile_lists(profile_url):
             if page == 1
             else f"{profile_url}lists/page/{page}/"
         )
-        html = get(page_url)
+
+        try:
+            html = get(page_url)
+        except RuntimeError as exc:
+            warning = str(exc)
+            log.warning("Could not discover public lists for %s: %s", username, exc)
+            break
+
         soup = BeautifulSoup(html, "html.parser")
         found_on_page = 0
 
@@ -379,7 +387,7 @@ def discover_profile_lists(profile_url):
         if found_on_page == 0:
             break
 
-    return result
+    return result, warning
 
 
 def is_watchlist_url(value):
@@ -1020,12 +1028,12 @@ def discover_page():
 def discover_profile():
     try:
         profile_url = normalize_profile_url(request.form.get("profile_url", ""))
-        lists = discover_profile_lists(profile_url)
+        lists, warning = discover_profile_lists(profile_url)
         return render_template(
             "discover.html",
             profile_url=profile_url,
             lists=lists,
-            error=None if lists else "No public lists were found on this profile.",
+            error=warning,
         )
     except Exception as exc:
         return render_template(
