@@ -270,30 +270,48 @@ def check_refresh_cancelled():
 
 def get(url):
     check_refresh_cancelled()
-
     if not allowed(url):
         raise RuntimeError(f"robots.txt disallows {url}")
 
-    throttle()
-    response = session.get(url, timeout=REQUEST_TIMEOUT)
-
-    check_refresh_cancelled()
-
-    if response.status_code == 429:
-        retry_after = response.headers.get("Retry-After", "60")
-        try:
-            delay = min(int(retry_after), 300)
-        except ValueError:
-            delay = 60
-
-        log.warning("Letterboxd returned 429; waiting %s seconds.", delay)
-        time.sleep(delay)
+    last_error = None
+    for attempt in range(RETRY_ATTEMPTS):
         check_refresh_cancelled()
         throttle()
-        response = session.get(url, timeout=REQUEST_TIMEOUT)
+        response = None
+        try:
+            response = session.get(url, timeout=REQUEST_TIMEOUT)
+            check_refresh_cancelled()
+            if response.status_code == 429:
+                last_error = RuntimeError("Letterboxd rate limit (429)")
+            elif response.status_code >= 500:
+                last_error = RuntimeError(f"Letterboxd server error ({response.status_code})")
+            else:
+                response.raise_for_status()
+                return response.text
+        except requests.RequestException as exc:
+            last_error = exc
 
-    response.raise_for_status()
-    return response.text
+        if attempt + 1 < RETRY_ATTEMPTS:
+            retry_after = response.headers.get("Retry-After") if response is not None else None
+            try:
+                delay = min(max(1, int(retry_after)), 300)
+            except (TypeError, ValueError):
+                delay = min(60, 2 ** attempt)
+
+            log.warning(
+                "Request failed for %s; retrying in %ss (%s/%s).",
+                url,
+                delay,
+                attempt + 1,
+                RETRY_ATTEMPTS - 1,
+            )
+
+            end_time = time.monotonic() + delay
+            while time.monotonic() < end_time:
+                check_refresh_cancelled()
+                time.sleep(min(0.5, end_time - time.monotonic()))
+
+    raise last_error or RuntimeError(f"Request failed for {url}")
 
 
 def extract_film_paths(html):
